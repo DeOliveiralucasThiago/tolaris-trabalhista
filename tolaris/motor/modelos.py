@@ -104,14 +104,15 @@ class Lancamento:
     natureza: str
     formula: str
     fundamento: str
+    pedido: str = ""  # pedido a que pertence (ex.: "Horas extras"), para o valor por pedido da inicial
 
 
 @dataclass
-class ResultadoRescisao:
-    dados: DadosRescisao
+class ResultadoCalculo:
+    titulo: str
     lancamentos: list[Lancamento]
     alertas: list[str]
-    resumo: dict[str, str]  # informações do contrato apuradas (tempo de serviço, aviso, datas)
+    resumo: dict[str, str]  # informações apuradas (tempo de serviço, aviso, datas)
 
     def _soma(self, grupo: Grupo) -> Decimal:
         return sum((item.valor for item in self.lancamentos if item.grupo == grupo), ZERO)
@@ -138,6 +139,136 @@ class ResultadoRescisao:
 
     def do_grupo(self, grupo: Grupo) -> list[Lancamento]:
         return [item for item in self.lancamentos if item.grupo == grupo]
+
+    def totais(self) -> list[tuple[str, Decimal, bool]]:
+        """Linhas de total para tela e relatórios: (rótulo, valor, destaque)."""
+        return [
+            ("Total de proventos", self.total_proventos, False),
+            ("Total de descontos", self.total_descontos, False),
+            ("Líquido rescisório", self.liquido, True),
+            ("FGTS a depositar (depósito + multa)", self.total_fgts, False),
+            ("Total geral", self.total_geral, True),
+        ]
+
+
+@dataclass
+class ResultadoRescisao(ResultadoCalculo):
+    dados: DadosRescisao | None = None
+
+
+# ---------------------------------------------------------------- horas extras e adicionais
+
+
+class AdicionalOcupacional(StrEnum):
+    NENHUM = "nenhum"
+    INSALUBRIDADE_MINIMO = "insalubridade_10"
+    INSALUBRIDADE_MEDIO = "insalubridade_20"
+    INSALUBRIDADE_MAXIMO = "insalubridade_40"
+    PERICULOSIDADE = "periculosidade"
+
+    @property
+    def rotulo(self) -> str:
+        return ROTULOS_ADICIONAL[self]
+
+    @property
+    def percentual(self) -> Decimal:
+        return PERCENTUAIS_ADICIONAL[self]
+
+    @property
+    def insalubridade(self) -> bool:
+        return self.value.startswith("insalubridade")
+
+
+ROTULOS_ADICIONAL = {
+    AdicionalOcupacional.NENHUM: "Nenhum",
+    AdicionalOcupacional.INSALUBRIDADE_MINIMO: "Insalubridade grau mínimo (10%)",
+    AdicionalOcupacional.INSALUBRIDADE_MEDIO: "Insalubridade grau médio (20%)",
+    AdicionalOcupacional.INSALUBRIDADE_MAXIMO: "Insalubridade grau máximo (40%)",
+    AdicionalOcupacional.PERICULOSIDADE: "Periculosidade (30%)",
+}
+PERCENTUAIS_ADICIONAL = {
+    AdicionalOcupacional.NENHUM: ZERO,
+    AdicionalOcupacional.INSALUBRIDADE_MINIMO: Decimal("0.10"),
+    AdicionalOcupacional.INSALUBRIDADE_MEDIO: Decimal("0.20"),
+    AdicionalOcupacional.INSALUBRIDADE_MAXIMO: Decimal("0.40"),
+    AdicionalOcupacional.PERICULOSIDADE: Decimal("0.30"),
+}
+
+
+@dataclass(frozen=True)
+class PeriodoJornada:
+    """Média mensal de horas devidas e não pagas num período do contrato."""
+
+    inicio: date
+    fim: date
+    horas_extras_1: Decimal = ZERO  # com o 1º adicional (em regra 50%)
+    horas_extras_2: Decimal = ZERO  # com o 2º adicional (em regra 100%: domingos e feriados)
+    horas_noturnas: Decimal = ZERO  # horas de relógio trabalhadas das 22h às 5h, adicional não pago
+
+
+@dataclass
+class DadosPedidos:
+    admissao: date
+    desligamento: date
+    modalidade: Modalidade
+    aviso: Aviso
+    salario: Decimal  # salário mensal na data do desligamento
+    historico_salarial: list[AlteracaoSalarial] = field(default_factory=list)
+    data_ajuizamento: date | None = None  # marco da prescrição quinquenal
+    divisor: int = 220
+    adicional_he_1: Decimal = Decimal("0.50")
+    adicional_he_2: Decimal = Decimal("1.00")
+    adicional_noturno: Decimal = Decimal("0.20")
+    hora_noturna_reduzida: bool = True
+    periodos: list[PeriodoJornada] = field(default_factory=list)
+    adicional_ocupacional: AdicionalOcupacional = AdicionalOcupacional.NENHUM
+    adicional_inicio: date | None = None  # None = desde a admissão
+    adicional_fim: date | None = None  # None = até o desligamento
+    adicional_ja_pago: bool = False  # se já era pago, só integra a base das horas extras
+
+
+@dataclass(frozen=True)
+class LinhaMensal:
+    """Uma competência do demonstrativo mês a mês."""
+
+    competencia: date
+    fracao: Decimal  # parte do mês considerada (1 = mês inteiro)
+    salario: Decimal
+    adicional_ocupacional: Decimal  # valor mensal cheio do adicional (integra a base da hora)
+    valor_hora: Decimal
+    horas_extras_1: Decimal
+    horas_extras_2: Decimal
+    horas_noturnas: Decimal  # já convertidas em hora noturna reduzida, se for o caso
+    valor_he_1: Decimal
+    valor_he_2: Decimal
+    valor_noturno: Decimal
+    valor_adicional: Decimal  # adicional ocupacional devido no mês (proporcional)
+    dias_uteis: int
+    repousos: int
+    dsr_he: Decimal
+    dsr_noturno: Decimal
+
+
+@dataclass
+class ResultadoPedidos(ResultadoCalculo):
+    dados: DadosPedidos | None = None
+    mensal: list[LinhaMensal] = field(default_factory=list)
+
+    def por_pedido(self) -> dict[str, Decimal]:
+        """Valor de cada pedido (principal + reflexos + FGTS), para a petição inicial."""
+        totais: dict[str, Decimal] = {}
+        for item in self.lancamentos:
+            totais[item.pedido] = totais.get(item.pedido, ZERO) + item.valor
+        return totais
+
+    def totais(self) -> list[tuple[str, Decimal, bool]]:
+        linhas = [(f"Pedido: {pedido}", valor, False) for pedido, valor in self.por_pedido().items()]
+        linhas += [
+            ("Total das parcelas (sem FGTS)", self.total_proventos, False),
+            ("FGTS + multa", self.total_fgts, False),
+            ("Total dos pedidos", self.total_geral, True),
+        ]
+        return linhas
 
 
 class ErroDeEntrada(ValueError):

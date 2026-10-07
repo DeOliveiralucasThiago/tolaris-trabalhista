@@ -19,6 +19,16 @@ from tolaris.datas import (
     ultimo_dia_do_mes,
 )
 from tolaris.dinheiro import ZERO, arredondar, formatar_brl, formatar_numero
+from tolaris.motor.contrato import (
+    ALIQUOTA_FGTS,
+    AVISO_PELA_METADE,
+    AVISO_PELO_EMPREGADOR,
+    METADE,
+    MULTA_FGTS,
+    dias_aviso_indenizados,
+    dias_de_aviso,
+    salario_em,
+)
 from tolaris.motor.modelos import (
     AVISOS_PERMITIDOS,
     Aviso,
@@ -31,26 +41,6 @@ from tolaris.motor.modelos import (
 )
 from tolaris.motor.tributos import calcular_inss, calcular_irrf
 from tolaris.tabelas import TabelaIndisponivel, aviso_tabela_desatualizada, inss_vigente, irrf_vigente
-
-ALIQUOTA_FGTS = Decimal("0.08")
-METADE = Decimal("0.5")
-MULTA_FGTS = {
-    Modalidade.SEM_JUSTA_CAUSA: Decimal("0.40"),
-    Modalidade.RESCISAO_INDIRETA: Decimal("0.40"),
-    Modalidade.ACORDO: Decimal("0.20"),
-    Modalidade.CULPA_RECIPROCA: Decimal("0.20"),
-}
-AVISO_PELO_EMPREGADOR = {
-    Modalidade.SEM_JUSTA_CAUSA,
-    Modalidade.RESCISAO_INDIRETA,
-    Modalidade.ACORDO,
-    Modalidade.CULPA_RECIPROCA,
-}
-
-
-def dias_de_aviso(admissao: date, desligamento: date) -> int:
-    """Lei nº 12.506/2011: 30 dias + 3 por ano completo de serviço, até 90 dias."""
-    return min(30 + 3 * anos_completos(admissao, desligamento), 90)
 
 
 def dias_de_ferias_por_faltas(faltas: int) -> int:
@@ -126,7 +116,7 @@ class _Calculo:
 
         self.anos_servico = anos_completos(dados.admissao, dados.desligamento)
         self.dias_aviso = dias_de_aviso(dados.admissao, dados.desligamento)
-        self.dias_aviso_indenizados = self._dias_aviso_indenizados()
+        self.dias_aviso_indenizados = dias_aviso_indenizados(dados.modalidade, dados.aviso, self.dias_aviso)
         self.data_projetada = dados.desligamento + timedelta(days=self.dias_aviso_indenizados)
 
         # Bases acumuladas para tributos, FGTS e multa do art. 467
@@ -144,21 +134,6 @@ class _Calculo:
             self.lancamentos.append(Lancamento(codigo, descricao, grupo, valor, natureza, formula, fundamento))
         return valor
 
-    def _dias_aviso_indenizados(self) -> int:
-        d = self.d
-        if d.modalidade not in AVISO_PELO_EMPREGADOR:
-            return 0
-        if d.aviso == Aviso.INDENIZADO:
-            return self.dias_aviso
-        # Aviso trabalhado: 30 dias cumpridos; os dias da proporcionalidade são indenizados.
-        return self.dias_aviso - 30
-
-    def _salario_em(self, data: date) -> Decimal:
-        vigentes = [a for a in self.d.historico_salarial if a.inicio <= data]
-        if not vigentes:
-            return self.d.salario
-        return max(vigentes, key=lambda a: a.inicio).salario
-
     # ------------------------------------------------------------------ verbas
 
     def executar(self) -> ResultadoRescisao:
@@ -174,7 +149,9 @@ class _Calculo:
         alerta_tabela = aviso_tabela_desatualizada(self.d.desligamento)
         if alerta_tabela:
             self.alertas.append(alerta_tabela)
-        return ResultadoRescisao(self.d, self.lancamentos, self.alertas, self._resumo())
+        return ResultadoRescisao(
+            "Memória de cálculo de verbas rescisórias", self.lancamentos, self.alertas, self._resumo(), self.d
+        )
 
     def _saldo_de_salario(self):
         d = self.d
@@ -208,7 +185,7 @@ class _Calculo:
         dias = self.dias_aviso_indenizados
         if dias <= 0:
             return
-        fator = METADE if d.modalidade in (Modalidade.ACORDO, Modalidade.CULPA_RECIPROCA) else Decimal(1)
+        fator = METADE if d.modalidade in AVISO_PELA_METADE else Decimal(1)
         formula = f"{formatar_brl(self.remuneracao)} ÷ 30 × {dias} dias"
         if d.aviso == Aviso.TRABALHADO:
             formula += f" (aviso de {self.dias_aviso} dias: 30 trabalhados, {dias} indenizados)"
@@ -427,10 +404,10 @@ class _Calculo:
                 dias = min(dias_corridos(d.admissao, ultimo_dia_do_mes(mes.year, mes.month)), 30)
             else:
                 dias = 30
-            total += self._salario_em(mes) / 30 * dias * ALIQUOTA_FGTS
+            total += salario_em(d.historico_salarial, d.salario, mes) / 30 * dias * ALIQUOTA_FGTS
         for ano in range(d.admissao.year, d.desligamento.year):
             avos = avos_no_ano(max(d.admissao, date(ano, 1, 1)), date(ano, 12, 31), ano)
-            total += self._salario_em(date(ano, 12, 1)) / 12 * avos * ALIQUOTA_FGTS
+            total += salario_em(d.historico_salarial, d.salario, date(ano, 12, 1)) / 12 * avos * ALIQUOTA_FGTS
         return arredondar(total)
 
     def _multa_467(self):

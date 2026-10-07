@@ -6,7 +6,8 @@ from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
 from tolaris.dinheiro import formatar_brl
-from tolaris.motor.modelos import Grupo, ResultadoRescisao
+from tolaris.motor.modelos import Grupo, ResultadoCalculo
+from tolaris.relatorios.mensal import colunas_ativas, formatar
 
 AZUL = (0, 43, 91)
 CINZA = (90, 90, 90)
@@ -21,6 +22,7 @@ TITULOS_GRUPO = {
     Grupo.FGTS: "FGTS (depositado na conta vinculada)",
 }
 TROCAS = {"–": "-", "—": "-", "−": "-", "“": '"', "”": '"', "‘": "'", "’": "'", "…": "...", "•": "-"}
+NOVA_LINHA = {"new_x": XPos.LMARGIN, "new_y": YPos.NEXT}
 
 
 def _texto(valor) -> str:
@@ -36,7 +38,7 @@ class _Documento(FPDF):
         self.set_y(-15)
         self.set_font("Helvetica", "I", 7)
         self.set_text_color(*CINZA)
-        self.cell(0, 4, _texto(AVISO_LEGAL), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        self.cell(0, 4, _texto(AVISO_LEGAL), align="C", **NOVA_LINHA)
         self.cell(0, 4, f"Página {self.page_no()}/{{nb}}", align="C")
 
 
@@ -44,41 +46,71 @@ def _secao(pdf: FPDF, titulo: str):
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 12)
     pdf.set_text_color(*AZUL)
-    pdf.cell(0, 8, _texto(titulo), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(0, 8, _texto(titulo), **NOVA_LINHA)
     pdf.set_text_color(0, 0, 0)
 
 
 def _linha_valor(pdf: FPDF, rotulo: str, valor, negrito=False, preenchido=False):
     pdf.set_font("Helvetica", "B" if negrito else "", 10)
     pdf.set_fill_color(*FUNDO)
-    pdf.cell(140, 7, _texto(rotulo), border="B", fill=preenchido)
-    pdf.cell(
-        0, 7, _texto(formatar_brl(valor)), border="B", align="R", fill=preenchido, new_x=XPos.LMARGIN, new_y=YPos.NEXT
-    )
+    largura = pdf.epw - 45
+    pdf.cell(largura, 7, _texto(rotulo), border="B", fill=preenchido)
+    pdf.cell(0, 7, _texto(formatar_brl(valor)), border="B", align="R", fill=preenchido, **NOVA_LINHA)
 
 
-def gerar_pdf(resultado: ResultadoRescisao) -> bytes:
+def _demonstrativo_mensal(pdf: FPDF, resultado: ResultadoCalculo, numero: int) -> int:
+    linhas = getattr(resultado, "mensal", None)
+    if not linhas:
+        return numero
+    pdf.add_page(orientation="L")
+    _secao(pdf, f"{numero}. Demonstrativo mês a mês")
+    colunas = colunas_ativas(linhas)
+    largura = pdf.epw / len(colunas)
+
+    def cabecalho():
+        pdf.set_font("Helvetica", "B", 6.5)
+        pdf.set_fill_color(*AZUL)
+        pdf.set_text_color(255, 255, 255)
+        for coluna in colunas:
+            pdf.cell(largura, 6, _texto(coluna.titulo), border=1, align="C", fill=True)
+        pdf.ln()
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Helvetica", "", 7)
+
+    cabecalho()
+    for linha in linhas:
+        if pdf.will_page_break(5):
+            pdf.add_page(orientation="L")
+            cabecalho()
+        for coluna in colunas:
+            alinhamento = "C" if coluna.tipo in ("mes", "fracao", "repousos") else "R"
+            pdf.cell(largura, 5, _texto(formatar(coluna, linha)), border=1, align=alinhamento)
+        pdf.ln()
+    pdf.add_page(orientation="P")
+    return numero + 1
+
+
+def gerar_pdf(resultado: ResultadoCalculo) -> bytes:
     pdf = _Documento()
     pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
 
     pdf.set_font("Helvetica", "B", 16)
     pdf.set_text_color(*AZUL)
-    pdf.cell(0, 10, "TOLARIS TRABALHISTA", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(0, 10, "TOLARIS TRABALHISTA", align="C", **NOVA_LINHA)
     pdf.set_font("Helvetica", "", 11)
-    pdf.cell(0, 6, _texto("Memória de cálculo de verbas rescisórias"), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(0, 6, _texto(resultado.titulo), align="C", **NOVA_LINHA)
     pdf.set_font("Helvetica", "I", 8)
     pdf.set_text_color(*CINZA)
-    pdf.cell(0, 5, f"Emitido em {datetime.now():%d/%m/%Y %H:%M}", align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(0, 5, f"Emitido em {datetime.now():%d/%m/%Y %H:%M}", align="C", **NOVA_LINHA)
     pdf.set_text_color(0, 0, 0)
 
     _secao(pdf, "1. Dados do contrato")
-    pdf.set_font("Helvetica", "", 9)
     for chave, valor in resultado.resumo.items():
         pdf.set_font("Helvetica", "B", 9)
         pdf.cell(55, 5.5, _texto(chave))
         pdf.set_font("Helvetica", "", 9)
-        pdf.multi_cell(0, 5.5, _texto(valor), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 5.5, _texto(valor), **NOVA_LINHA)
 
     _secao(pdf, "2. Demonstrativo")
     for grupo in Grupo:
@@ -87,34 +119,33 @@ def gerar_pdf(resultado: ResultadoRescisao) -> bytes:
             continue
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_text_color(*AZUL)
-        pdf.cell(0, 7, _texto(TITULOS_GRUPO[grupo]), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(0, 7, _texto(TITULOS_GRUPO[grupo]), **NOVA_LINHA)
         pdf.set_text_color(0, 0, 0)
         for item in itens:
             _linha_valor(pdf, item.descricao, item.valor)
     pdf.ln(2)
-    _linha_valor(pdf, "Total de proventos", resultado.total_proventos, negrito=True)
-    _linha_valor(pdf, "Total de descontos", resultado.total_descontos, negrito=True)
-    _linha_valor(pdf, "LÍQUIDO RESCISÓRIO", resultado.liquido, negrito=True, preenchido=True)
-    _linha_valor(pdf, "FGTS a depositar (depósito + multa)", resultado.total_fgts, negrito=True)
-    _linha_valor(pdf, "TOTAL GERAL", resultado.total_geral, negrito=True, preenchido=True)
+    for rotulo, valor, destaque in resultado.totais():
+        _linha_valor(pdf, rotulo.upper() if destaque else rotulo, valor, negrito=True, preenchido=destaque)
 
-    _secao(pdf, "3. Memória de cálculo")
+    numero = _demonstrativo_mensal(pdf, resultado, 3)
+
+    _secao(pdf, f"{numero}. Memória de cálculo")
     for item in resultado.lancamentos:
         pdf.set_font("Helvetica", "B", 9)
-        pdf.cell(140, 5.5, _texto(item.descricao))
-        pdf.cell(0, 5.5, _texto(formatar_brl(item.valor)), align="R", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.cell(pdf.epw - 45, 5.5, _texto(item.descricao))
+        pdf.cell(0, 5.5, _texto(formatar_brl(item.valor)), align="R", **NOVA_LINHA)
         pdf.set_font("Helvetica", "", 8.5)
-        pdf.multi_cell(0, 4.5, _texto(f"Cálculo: {item.formula}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 4.5, _texto(f"Cálculo: {item.formula}"), **NOVA_LINHA)
         pdf.set_font("Helvetica", "I", 8)
         pdf.set_text_color(*CINZA)
-        pdf.multi_cell(0, 4.5, _texto(f"Fundamento: {item.fundamento}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+        pdf.multi_cell(0, 4.5, _texto(f"Fundamento: {item.fundamento}"), **NOVA_LINHA)
         pdf.set_text_color(0, 0, 0)
         pdf.ln(1.5)
 
     if resultado.alertas:
-        _secao(pdf, "4. Alertas")
+        _secao(pdf, f"{numero + 1}. Alertas")
         pdf.set_font("Helvetica", "", 9)
         for alerta in resultado.alertas:
-            pdf.multi_cell(0, 5, _texto(f"- {alerta}"), new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+            pdf.multi_cell(0, 5, _texto(f"- {alerta}"), **NOVA_LINHA)
 
     return bytes(pdf.output())

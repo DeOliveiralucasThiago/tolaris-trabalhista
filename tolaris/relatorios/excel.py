@@ -6,18 +6,27 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
-from tolaris.motor.modelos import Grupo, ResultadoRescisao
+from tolaris.motor.modelos import Grupo, ResultadoCalculo
+from tolaris.relatorios.mensal import colunas_ativas, numero
 
 FORMATO_MOEDA = '"R$" #,##0.00'
+FORMATO_HORAS = "#,##0.00"
 AZUL = "002B5B"
 
 
-def gerar_excel(resultado: ResultadoRescisao) -> bytes:
+def _cabecalho(planilha, titulos):
+    planilha.append(titulos)
+    for celula in planilha[planilha.max_row]:
+        celula.font = Font(bold=True, color="FFFFFF")
+        celula.fill = PatternFill("solid", fgColor=AZUL)
+
+
+def gerar_excel(resultado: ResultadoCalculo) -> bytes:
     livro = Workbook()
     planilha = livro.active
-    planilha.title = "Rescisão"
+    planilha.title = "Resumo"
 
-    planilha.append(["TOLARIS TRABALHISTA – Cálculo de verbas rescisórias"])
+    planilha.append([f"TOLARIS TRABALHISTA – {resultado.titulo}"])
     planilha["A1"].font = Font(bold=True, size=14, color=AZUL)
     planilha.append([f"Emitido em {datetime.now():%d/%m/%Y %H:%M}"])
     planilha.append([])
@@ -26,12 +35,7 @@ def gerar_excel(resultado: ResultadoRescisao) -> bytes:
         planilha.append([chave, valor])
     planilha.append([])
 
-    cabecalho = ["Grupo", "Rubrica", "Natureza", "Valor (R$)", "Memória de cálculo", "Fundamento"]
-    planilha.append(cabecalho)
-    for celula in planilha[planilha.max_row]:
-        celula.font = Font(bold=True, color="FFFFFF")
-        celula.fill = PatternFill("solid", fgColor=AZUL)
-
+    _cabecalho(planilha, ["Grupo", "Rubrica", "Natureza", "Valor (R$)", "Memória de cálculo", "Fundamento"])
     for grupo in Grupo:
         for item in resultado.do_grupo(grupo):
             planilha.append(
@@ -40,13 +44,7 @@ def gerar_excel(resultado: ResultadoRescisao) -> bytes:
             planilha.cell(planilha.max_row, 4).number_format = FORMATO_MOEDA
 
     planilha.append([])
-    for rotulo, valor in (
-        ("Total de proventos", resultado.total_proventos),
-        ("Total de descontos", resultado.total_descontos),
-        ("Líquido rescisório", resultado.liquido),
-        ("FGTS a depositar (depósito + multa)", resultado.total_fgts),
-        ("Total geral", resultado.total_geral),
-    ):
+    for rotulo, valor, _destaque in resultado.totais():
         planilha.append(["", rotulo, "", valor])
         planilha.cell(planilha.max_row, 2).font = Font(bold=True)
         planilha.cell(planilha.max_row, 4).number_format = FORMATO_MOEDA
@@ -64,6 +62,26 @@ def gerar_excel(resultado: ResultadoRescisao) -> bytes:
     for linha in planilha.iter_rows(min_col=5, max_col=6):
         for celula in linha:
             celula.alignment = Alignment(wrap_text=True, vertical="top")
+
+    linhas = getattr(resultado, "mensal", None)
+    if linhas:
+        mensal = livro.create_sheet("Mês a mês")
+        colunas = colunas_ativas(linhas)
+        _cabecalho(mensal, [c.titulo for c in colunas])
+        for linha in linhas:
+            mensal.append([numero(c, linha) for c in colunas])
+            for indice, coluna in enumerate(colunas, start=1):
+                celula = mensal.cell(mensal.max_row, indice)
+                if coluna.tipo == "moeda":
+                    celula.number_format = FORMATO_MOEDA
+                elif coluna.tipo == "horas":
+                    celula.number_format = FORMATO_HORAS
+                elif coluna.tipo == "mes":
+                    celula.number_format = "mm/yyyy"
+                elif coluna.tipo == "fracao":
+                    celula.number_format = "0.00%"
+        for indice in range(1, len(colunas) + 1):
+            mensal.column_dimensions[mensal.cell(1, indice).column_letter].width = 16
 
     saida = io.BytesIO()
     livro.save(saida)

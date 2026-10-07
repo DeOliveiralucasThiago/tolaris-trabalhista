@@ -75,3 +75,29 @@ def meses_entre(inicio: date, fim: date):
     while atual <= fim:
         yield atual
         atual = somar_meses(atual, 1)
+
+
+def feriados_nacionais(ano: int) -> set[date]:
+    """Feriados nacionais fixos (Lei nº 662/1949, Lei nº 6.802/1980, Lei nº 14.759/2023).
+
+    Feriados municipais e estaduais (inclusive Sexta-Feira Santa e Corpus Christi, que
+    dependem de lei local) e pontos facultativos (Carnaval) não entram."""
+    datas = {(1, 1), (4, 21), (5, 1), (9, 7), (10, 12), (11, 2), (11, 15), (12, 25)}
+    if ano >= 2024:
+        datas.add((11, 20))  # Dia Nacional de Zumbi e da Consciência Negra
+    return {date(ano, mes, dia) for mes, dia in datas}
+
+
+def dias_uteis_e_repousos(ano: int, mes: int) -> tuple[int, int]:
+    """(dias úteis, domingos + feriados) do mês, para o reflexo em DSR (Lei nº 605/1949).
+
+    Sábado conta como dia útil (Súmula 113 do TST trata do bancário, exceção à regra)."""
+    feriados = feriados_nacionais(ano)
+    uteis = repousos = 0
+    for dia in range(1, ultimo_dia_do_mes(ano, mes).day + 1):
+        d = date(ano, mes, dia)
+        if d.weekday() == 6 or d in feriados:
+            repousos += 1
+        else:
+            uteis += 1
+    return uteis, repousos

@@ -1,0 +1,365 @@
+"""Seções do formulário. Cada função desenha campos e devolve os valores digitados.
+
+Os campos usam chaves fixas no st.session_state para que o caso possa ser salvo e reaberto.
+"""
+
+from datetime import date
+from decimal import Decimal
+
+import streamlit as st
+
+from tolaris.dinheiro import arredondar
+from tolaris.interface.caso import CAMPOS
+from tolaris.motor.modelos import (
+    AVISOS_PERMITIDOS,
+    AdicionalOcupacional,
+    AlteracaoSalarial,
+    DadosPedidos,
+    DadosRescisao,
+    Modalidade,
+    PeriodoJornada,
+)
+
+DATA_MINIMA = date(2019, 1, 1)
+DIVISORES = {220: "220 (44 h semanais)", 200: "200 (40 h semanais)", 180: "180 (36 h semanais)", 150: "150 (30 h)"}
+PADROES = {
+    "admissao": None,
+    "desligamento": None,
+    "salario": 0.0,
+    "media_variaveis": 0.0,
+    "ferias_vencidas": 0,
+    "faltas_periodo_aquisitivo": 0,
+    "faltas_mes_rescisao": 0,
+    "dependentes_ir": 0,
+    "decimo_terceiro_pago": 0.0,
+    "outros_descontos": 0.0,
+    "saldo_fgts": 0.0,
+    "divisor": 220,
+    "adicional_he_1": 50.0,
+    "adicional_he_2": 100.0,
+    "adicional_noturno": 20.0,
+    "hora_noturna_reduzida": True,
+    "adicional_todo_contrato": True,
+    "adicional_inicio": None,
+    "adicional_fim": None,
+    "considerar_prescricao": True,
+}
+COLUNAS_PERIODO = {
+    "inicio": "Início",
+    "fim": "Fim",
+    "he_1": "HE 1º adicional (h/mês)",
+    "he_2": "HE 2º adicional (h/mês)",
+    "noturnas": "Horas noturnas (h/mês)",
+}
+LINHA_PERIODO_VAZIA = {
+    COLUNAS_PERIODO["inicio"]: None,
+    COLUNAS_PERIODO["fim"]: None,
+    COLUNAS_PERIODO["he_1"]: 0.0,
+    COLUNAS_PERIODO["he_2"]: 0.0,
+    COLUNAS_PERIODO["noturnas"]: 0.0,
+}
+
+
+def dec(valor) -> Decimal:
+    return arredondar(Decimal(str(valor or 0)))
+
+
+def iniciar_estado():
+    # Reatribuir mantém o valor de campos que não aparecem nesta execução (ex.: os do outro
+    # modo de cálculo); sem isso o Streamlit descarta o estado de widgets não desenhados.
+    for chave in CAMPOS:
+        if chave in st.session_state:
+            st.session_state[chave] = st.session_state[chave]
+    for chave, padrao in PADROES.items():
+        st.session_state.setdefault(chave, padrao)
+    st.session_state.setdefault("data_ajuizamento", date.today())
+    for tabela in ("historico", "periodos"):
+        st.session_state.setdefault(f"{tabela}_versao", 0)
+        st.session_state.setdefault(f"{tabela}_inicial", [])
+        st.session_state.setdefault(f"{tabela}_atual", [])
+
+
+def _tabela(nome: str, vazia: list[dict], column_config: dict) -> list[dict]:
+    """Tabela editável cujo conteúdo pode ser recarregado ao abrir um caso."""
+    linhas = st.data_editor(
+        st.session_state[f"{nome}_inicial"] or vazia,
+        num_rows="dynamic",
+        key=f"{nome}_{st.session_state[f'{nome}_versao']}",
+        column_config=column_config,
+        width="stretch",
+    )
+    st.session_state[f"{nome}_atual"] = linhas
+    return linhas
+
+
+# ---------------------------------------------------------------- seções comuns
+
+
+def secao_contrato(modo_rescisao: bool):
+    with st.container(border=True):
+        st.subheader("1. Contrato")
+        c1, c2, c3 = st.columns(3)
+        c1.date_input("Data de admissão", format="DD/MM/YYYY", key="admissao", min_value=date(1980, 1, 1))
+        c2.date_input(
+            "Último dia trabalhado",
+            format="DD/MM/YYYY",
+            key="desligamento",
+            min_value=DATA_MINIMA,
+            help="Se o aviso foi trabalhado, é o último dia do aviso. Se foi indenizado, é o dia do afastamento.",
+        )
+        c3.number_input("Salário mensal (R$)", min_value=0.0, step=100.0, key="salario")
+        if modo_rescisao:
+            c1.number_input(
+                "Média mensal de variáveis (R$)",
+                min_value=0.0,
+                step=50.0,
+                key="media_variaveis",
+                help="Horas extras, comissões, adicionais habituais etc. Integra aviso, 13º e férias.",
+            )
+        ajuda = (
+            "Usado apenas para estimar o saldo do FGTS quando o extrato não for informado."
+            if modo_rescisao
+            else "O valor-hora de cada mês usa o salário da época."
+        )
+        usar = c2.checkbox("Houve alteração de salário durante o contrato?", key="usar_historico", help=ajuda)
+        if usar:
+            _tabela(
+                "historico",
+                [{"A partir de": None, "Salário (R$)": 0.0}],
+                {
+                    "A partir de": st.column_config.DateColumn(format="DD/MM/YYYY", required=True),
+                    "Salário (R$)": st.column_config.NumberColumn(min_value=0.0, format="R$ %.2f", required=True),
+                },
+            )
+
+
+def historico_salarial() -> list[AlteracaoSalarial]:
+    if not st.session_state.get("usar_historico"):
+        return []
+    return [
+        AlteracaoSalarial(linha["A partir de"], dec(linha["Salário (R$)"]))
+        for linha in st.session_state["historico_atual"]
+        if linha.get("A partir de") and linha.get("Salário (R$)")
+    ]
+
+
+def secao_extincao():
+    with st.container(border=True):
+        st.subheader("2. Como o contrato terminou")
+        c1, c2 = st.columns(2)
+        modalidade = c1.selectbox(
+            "Modalidade de extinção", list(Modalidade), format_func=lambda m: m.rotulo, key="modalidade"
+        )
+        opcoes = list(AVISOS_PERMITIDOS[modalidade])
+        if st.session_state.get("aviso") not in opcoes:
+            st.session_state["aviso"] = opcoes[0]
+        c2.selectbox("Aviso prévio", opcoes, format_func=lambda a: a.rotulo, key="aviso", disabled=len(opcoes) == 1)
+
+
+def pendencias_contrato() -> list[str]:
+    estado = st.session_state
+    faltando = []
+    if not estado.get("admissao"):
+        faltando.append("data de admissão")
+    if not estado.get("desligamento"):
+        faltando.append("último dia trabalhado")
+    if not estado.get("salario"):
+        faltando.append("salário mensal")
+    return faltando
+
+
+# ---------------------------------------------------------------- rescisão
+
+
+def secoes_rescisao():
+    with st.container(border=True):
+        st.subheader("3. Férias, faltas e 13º")
+        c1, c2, c3, c4 = st.columns(4)
+        c1.number_input(
+            "Períodos de férias vencidas não gozadas",
+            min_value=0,
+            step=1,
+            key="ferias_vencidas",
+            help="Quantos períodos aquisitivos de 12 meses já completos o empregado não tirou. "
+            "O sistema identifica sozinho quais devem ser pagos em dobro.",
+        )
+        c2.number_input(
+            "Faltas injustificadas no período aquisitivo atual",
+            min_value=0,
+            step=1,
+            key="faltas_periodo_aquisitivo",
+            help="Reduz os dias de férias proporcionais (art. 130 da CLT).",
+        )
+        c3.number_input("Faltas injustificadas no mês do desligamento", min_value=0, step=1, key="faltas_mes_rescisao")
+        c4.number_input(
+            "13º já pago no ano (R$)",
+            min_value=0.0,
+            step=100.0,
+            key="decimo_terceiro_pago",
+            help="Adiantamento (1ª parcela) já recebido, que será descontado.",
+        )
+
+    with st.container(border=True):
+        st.subheader("4. FGTS, multas e descontos")
+        c1, c2, c3 = st.columns(3)
+        if c1.checkbox("Tenho o saldo do FGTS (extrato)", key="informar_saldo_fgts"):
+            c1.number_input(
+                "Saldo para fins rescisórios (R$)",
+                min_value=0.0,
+                step=100.0,
+                key="saldo_fgts",
+                help="Valor do extrato do FGTS. Sem ele, o sistema estima o saldo pelo salário.",
+            )
+        c2.checkbox(
+            "Verbas pagas fora do prazo (multa do art. 477)",
+            key="pagamento_em_atraso",
+            help="Prazo de 10 dias a contar do término do contrato (art. 477, § 6º, CLT).",
+        )
+        c2.checkbox(
+            "Aplicar multa do art. 467",
+            key="multa_467",
+            help="50% sobre as verbas rescisórias incontroversas não pagas na primeira audiência.",
+        )
+        c3.number_input("Dependentes para IR", min_value=0, step=1, key="dependentes_ir")
+        c3.number_input("Outros descontos (R$)", min_value=0.0, step=50.0, key="outros_descontos")
+
+
+def dados_rescisao() -> DadosRescisao:
+    e = st.session_state
+    return DadosRescisao(
+        admissao=e["admissao"],
+        desligamento=e["desligamento"],
+        modalidade=e["modalidade"],
+        aviso=e["aviso"],
+        salario=dec(e["salario"]),
+        media_variaveis=dec(e["media_variaveis"]),
+        historico_salarial=historico_salarial(),
+        ferias_vencidas=int(e["ferias_vencidas"]),
+        faltas_periodo_aquisitivo=int(e["faltas_periodo_aquisitivo"]),
+        faltas_mes_rescisao=int(e["faltas_mes_rescisao"]),
+        dependentes_ir=int(e["dependentes_ir"]),
+        decimo_terceiro_pago=dec(e["decimo_terceiro_pago"]),
+        saldo_fgts=dec(e["saldo_fgts"]) if e.get("informar_saldo_fgts") else None,
+        pagamento_em_atraso=bool(e.get("pagamento_em_atraso")),
+        multa_467=bool(e.get("multa_467")),
+        outros_descontos=dec(e["outros_descontos"]),
+    )
+
+
+# ---------------------------------------------------------------- horas extras e adicionais
+
+
+def secoes_pedidos():
+    with st.container(border=True):
+        st.subheader("3. Jornada: horas extras e horas noturnas não pagas")
+        st.caption(
+            "Informe a média mensal de horas devidas e não pagas em cada período. "
+            "Ex.: 2 horas extras por dia × 22 dias = 44 h/mês. "
+            "Deixe Início e Fim em branco para usar o contrato inteiro."
+        )
+        c1, c2, c3, c4 = st.columns(4)
+        c1.selectbox("Divisor", list(DIVISORES), format_func=DIVISORES.get, key="divisor")
+        c2.number_input("1º adicional de HE (%)", min_value=0.0, step=5.0, key="adicional_he_1")
+        c3.number_input(
+            "2º adicional de HE (%)",
+            min_value=0.0,
+            step=5.0,
+            key="adicional_he_2",
+            help="Em regra 100%: trabalho em domingos e feriados sem folga compensatória (Súmula 146 do TST).",
+        )
+        c4.number_input("Adicional noturno (%)", min_value=0.0, step=5.0, key="adicional_noturno")
+        st.checkbox(
+            "Converter horas noturnas em hora reduzida (52min30s)",
+            key="hora_noturna_reduzida",
+            help="Art. 73, § 1º, CLT: cada 52min30s de trabalho noturno contam como 1 hora.",
+        )
+        _tabela(
+            "periodos",
+            [dict(LINHA_PERIODO_VAZIA)],
+            {
+                COLUNAS_PERIODO["inicio"]: st.column_config.DateColumn(format="DD/MM/YYYY"),
+                COLUNAS_PERIODO["fim"]: st.column_config.DateColumn(format="DD/MM/YYYY"),
+                COLUNAS_PERIODO["he_1"]: st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
+                COLUNAS_PERIODO["he_2"]: st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
+                COLUNAS_PERIODO["noturnas"]: st.column_config.NumberColumn(min_value=0.0, format="%.2f"),
+            },
+        )
+
+    with st.container(border=True):
+        st.subheader("4. Insalubridade ou periculosidade")
+        c1, c2 = st.columns(2)
+        tipo = c1.selectbox(
+            "Adicional",
+            list(AdicionalOcupacional),
+            format_func=lambda a: a.rotulo,
+            key="adicional_ocupacional",
+            help="Os dois adicionais não se acumulam (art. 193, § 2º, CLT).",
+        )
+        if tipo != AdicionalOcupacional.NENHUM:
+            c2.checkbox(
+                "Já era pago (só integra a base das horas extras)",
+                key="adicional_ja_pago",
+                help="Marque se o empregado já recebia o adicional e o pedido é apenas a integração no valor-hora.",
+            )
+            if not c2.checkbox("Durante todo o contrato", key="adicional_todo_contrato"):
+                c3, c4 = st.columns(2)
+                c3.date_input("Adicional devido desde", format="DD/MM/YYYY", key="adicional_inicio")
+                c4.date_input("Adicional devido até", format="DD/MM/YYYY", key="adicional_fim")
+
+    with st.container(border=True):
+        st.subheader("5. Prescrição")
+        c1, c2 = st.columns(2)
+        if c1.checkbox(
+            "Aplicar prescrição quinquenal",
+            key="considerar_prescricao",
+            help="Exclui as parcelas anteriores a 5 anos da data do ajuizamento (art. 7º, XXIX, CF).",
+        ):
+            c2.date_input(
+                "Data do ajuizamento (ou prevista)",
+                format="DD/MM/YYYY",
+                key="data_ajuizamento",
+                help="Para a petição inicial, use a data prevista de distribuição.",
+            )
+
+
+def periodos_jornada(admissao: date, desligamento: date) -> list[PeriodoJornada]:
+    periodos = []
+    for linha in st.session_state["periodos_atual"]:
+        horas = [dec(linha.get(COLUNAS_PERIODO[c])) for c in ("he_1", "he_2", "noturnas")]
+        if not any(horas):
+            continue
+        periodos.append(
+            PeriodoJornada(
+                inicio=linha.get(COLUNAS_PERIODO["inicio"]) or admissao,
+                fim=linha.get(COLUNAS_PERIODO["fim"]) or desligamento,
+                horas_extras_1=horas[0],
+                horas_extras_2=horas[1],
+                horas_noturnas=horas[2],
+            )
+        )
+    return periodos
+
+
+def dados_pedidos() -> DadosPedidos:
+    e = st.session_state
+    tipo = e.get("adicional_ocupacional", AdicionalOcupacional.NENHUM)
+    todo_contrato = e.get("adicional_todo_contrato", True)
+    return DadosPedidos(
+        admissao=e["admissao"],
+        desligamento=e["desligamento"],
+        modalidade=e["modalidade"],
+        aviso=e["aviso"],
+        salario=dec(e["salario"]),
+        historico_salarial=historico_salarial(),
+        data_ajuizamento=e.get("data_ajuizamento") if e.get("considerar_prescricao") else None,
+        divisor=int(e["divisor"]),
+        adicional_he_1=dec(e["adicional_he_1"]) / 100,
+        adicional_he_2=dec(e["adicional_he_2"]) / 100,
+        adicional_noturno=dec(e["adicional_noturno"]) / 100,
+        hora_noturna_reduzida=bool(e.get("hora_noturna_reduzida")),
+        periodos=periodos_jornada(e["admissao"], e["desligamento"]),
+        adicional_ocupacional=tipo,
+        adicional_inicio=None if todo_contrato else e.get("adicional_inicio"),
+        adicional_fim=None if todo_contrato else e.get("adicional_fim"),
+        adicional_ja_pago=bool(e.get("adicional_ja_pago")) and tipo != AdicionalOcupacional.NENHUM,
+    )
