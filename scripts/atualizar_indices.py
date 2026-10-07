@@ -7,6 +7,7 @@ Grava `tolaris/tabelas/indices.json`. Roda todo mês pelo GitHub Actions
 
 import json
 import time
+import urllib.error
 import urllib.request
 from datetime import date
 from pathlib import Path
@@ -39,6 +40,12 @@ def baixar(codigo: int) -> list[dict]:
                 with urllib.request.urlopen(pedido, timeout=60) as resposta:
                     registros += json.load(resposta)
                 break
+            except urllib.error.HTTPError as erro:
+                if erro.code == 404:  # o SGS responde 404 quando não há dados no período
+                    break
+                if tentativa == 3:
+                    raise RuntimeError(f"Falha ao baixar a série {codigo} ({inicio} a {fim}): {erro}") from erro
+                time.sleep(2 ** (tentativa + 1))
             except Exception as erro:  # noqa: BLE001 - rede instável: tenta de novo
                 if tentativa == 3:
                     raise RuntimeError(f"Falha ao baixar a série {codigo} ({inicio} a {fim}): {erro}") from erro
@@ -85,6 +92,9 @@ def main():
     DESTINO.write_text(json.dumps(conteudo, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 
     # Conferência: acumulados anuais para comparar com os números oficiais divulgados
+    vazias = [nome for nome, serie in series.items() if not serie]
+    if vazias:
+        raise SystemExit(f"Séries sem nenhum dado: {', '.join(vazias)}")
     for nome, serie in series.items():
         ultimo = max(serie) if serie else "-"
         composto = nome in ("ipca_e", "ipca", "tr")
