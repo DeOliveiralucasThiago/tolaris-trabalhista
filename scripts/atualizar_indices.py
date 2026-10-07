@@ -79,8 +79,11 @@ def main():
     for nome, (codigo, descricao) in SERIES_MENSAIS.items():
         series[nome] = por_mes(baixar(codigo))
         descricoes[nome] = f"SGS {codigo}: {descricao}"
+    # O mês em curso vem parcial (ex.: SELIC acumulada até ontem): fica de fora
+    mes_atual = f"{date.today():%Y-%m}"
+    series = {nome: {k: v for k, v in serie.items() if k < mes_atual} for nome, serie in series.items()}
     codigo, descricao = TR_DIARIA
-    series["tr"] = por_mes(baixar(codigo), so_primeiro_dia=True)
+    series["tr"] = por_mes(baixar(codigo), so_primeiro_dia=True)  # a TR do mês é conhecida no dia 1º
     descricoes["tr"] = f"SGS {codigo}: {descricao}"
 
     conteudo = {

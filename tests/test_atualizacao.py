@@ -136,9 +136,18 @@ def test_tabela_real_de_indices_quando_disponivel():
         tabela = indices()
     except Exception:
         pytest.skip("indices.json ainda não foi baixado do Banco Central")
-    # Conferência com números oficiais: IPCA 2023 = 4,62%; IPCA 2024 = 4,83%
-    for ano, esperado in ((2023, Decimal("4.62")), (2024, Decimal("4.83"))):
+    # Conferência com números oficiais do IBGE: IPCA 2023 = 4,62% e 2024 = 4,83%;
+    # IPCA-E 2021 = 10,42%, 2023 = 4,72% e 2024 = 4,71%
+    for serie, ano, esperado in (
+        ("ipca", 2023, "4.62"),
+        ("ipca", 2024, "4.83"),
+        ("ipca_e", 2021, "10.42"),
+        ("ipca_e", 2023, "4.72"),
+        ("ipca_e", 2024, "4.71"),
+    ):
         fator = Decimal(1)
         for mes in meses_entre(date(ano, 1, 1), date(ano, 12, 1)):
-            fator *= 1 + tabela.valor("ipca", mes)
-        assert round((fator - 1) * 100, 2) == esperado
+            fator *= 1 + tabela.valor(serie, mes)
+        assert round((fator - 1) * 100, 2) == Decimal(esperado), (serie, ano)
+    # Taxa legal nunca negativa (piso zero, art. 406, § 3º, CC)
+    assert min(tabela.series["taxa_legal"].values()) >= 0
