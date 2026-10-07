@@ -82,3 +82,17 @@ def test_excel_de_pedidos_tem_aba_mes_a_mes():
     livro = load_workbook(io.BytesIO(gerar_excel(calcular_pedidos(PEDIDOS))))
     assert livro.sheetnames == ["Resumo", "Mês a mês"]
     assert livro["Mês a mês"].max_row == 19  # cabeçalho + 18 competências
+
+
+def test_relatorios_com_atualizacao():
+    from tests.test_atualizacao import INDICES
+    from tolaris.motor.atualizacao import ParametrosAtualizacao, atualizar
+
+    resultado = calcular_pedidos(PEDIDOS)
+    atualizado = atualizar(resultado, ParametrosAtualizacao(date(2026, 8, 10)), date(2025, 6, 1), INDICES)
+    assert atualizado.total > resultado.total_geral
+    assert gerar_pdf(resultado, atualizado).startswith(b"%PDF")
+    livro = load_workbook(io.BytesIO(gerar_excel(resultado, atualizado)))
+    assert livro.sheetnames == ["Resumo", "Mês a mês", "Atualização"]
+    valores = [linha[6] for linha in livro["Atualização"].iter_rows(values_only=True)]
+    assert float(atualizado.total) in valores

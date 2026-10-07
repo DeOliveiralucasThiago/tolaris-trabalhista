@@ -6,6 +6,7 @@ from datetime import datetime
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from tolaris.motor.atualizacao import ResultadoAtualizacao
 from tolaris.motor.modelos import Grupo, ResultadoCalculo
 from tolaris.relatorios.mensal import colunas_ativas, numero
 
@@ -21,7 +22,34 @@ def _cabecalho(planilha, titulos):
         celula.fill = PatternFill("solid", fgColor=AZUL)
 
 
-def gerar_excel(resultado: ResultadoCalculo) -> bytes:
+def _aba_atualizacao(livro, atualizado: ResultadoAtualizacao):
+    planilha = livro.create_sheet("Atualização")
+    for linha in atualizado.criterio:
+        planilha.append([linha])
+    planilha.append([])
+    _cabecalho(planilha, ["Rubrica", "Pedido", "Original", "Correção", "SELIC", "Juros", "Atualizado"])
+    for item in atualizado.linhas + [None]:
+        if item is None:
+            valores, rotulo, pedido = atualizado.soma(), "Total (proventos e FGTS)", ""
+        else:
+            valores, rotulo, pedido = item.valores, item.descricao, item.pedido
+        planilha.append(
+            [rotulo, pedido, valores.original, valores.correcao, valores.selic, valores.juros, valores.total]
+        )
+        for coluna in range(3, 8):
+            planilha.cell(planilha.max_row, coluna).number_format = FORMATO_MOEDA
+    planilha.append(["Descontos (não atualizados)", "", None, None, None, None, atualizado.descontos])
+    planilha.append(["Total atualizado", "", None, None, None, None, atualizado.total])
+    for linha in (planilha.max_row - 1, planilha.max_row):
+        planilha.cell(linha, 7).number_format = FORMATO_MOEDA
+        planilha.cell(linha, 1).font = Font(bold=True)
+    planilha.column_dimensions["A"].width = 60
+    planilha.column_dimensions["B"].width = 28
+    for coluna in "CDEFG":
+        planilha.column_dimensions[coluna].width = 16
+
+
+def gerar_excel(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | None = None) -> bytes:
     livro = Workbook()
     planilha = livro.active
     planilha.title = "Resumo"
@@ -82,6 +110,9 @@ def gerar_excel(resultado: ResultadoCalculo) -> bytes:
                     celula.number_format = "0.00%"
         for indice in range(1, len(colunas) + 1):
             mensal.column_dimensions[mensal.cell(1, indice).column_letter].width = 16
+
+    if atualizado:
+        _aba_atualizacao(livro, atualizado)
 
     saida = io.BytesIO()
     livro.save(saida)

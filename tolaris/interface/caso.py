@@ -46,6 +46,10 @@ CAMPOS = (
     "adicional_ja_pago",
     "considerar_prescricao",
     "data_ajuizamento",
+    # atualização
+    "atualizar",
+    "data_atualizacao",
+    "juros_pre_judiciais",
 )
 TABELAS = ("historico", "periodos")
 

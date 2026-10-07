@@ -154,3 +154,37 @@ def aviso_tabela_desatualizada(data: date) -> str | None:
         f"A tabela mais recente de {' e '.join(atrasadas)} cadastrada no sistema é anterior a "
         f"{data.year}. Confira se já existe tabela nova antes de usar este resultado."
     )
+
+
+@dataclass(frozen=True)
+class Indices:
+    """Séries mensais em fração (0,0042 = 0,42%), indexadas por "AAAA-MM"."""
+
+    series: dict[str, dict[str, Decimal]]
+    atualizado_em: date | None = None
+
+    def valor(self, serie: str, competencia: date) -> Decimal | None:
+        return self.series.get(serie, {}).get(f"{competencia:%Y-%m}")
+
+    def ultimo_mes(self, serie: str) -> date | None:
+        meses = self.series.get(serie)
+        if not meses:
+            return None
+        ano, mes = max(meses).split("-")
+        return date(int(ano), int(mes), 1)
+
+
+@cache
+def indices() -> Indices:
+    caminho = PASTA / "indices.json"
+    if not caminho.exists():
+        raise TabelaIndisponivel(
+            "A tabela de índices do Banco Central ainda não foi baixada "
+            "(rode scripts/atualizar_indices.py ou a rotina 'Atualizar índices' do GitHub)."
+        )
+    with open(caminho, encoding="utf-8") as arquivo:
+        conteudo = json.load(arquivo)
+    series = {
+        nome: {mes: Decimal(valor) / 100 for mes, valor in meses.items()} for nome, meses in conteudo["series"].items()
+    }
+    return Indices(series, date.fromisoformat(conteudo["atualizado_em"]))

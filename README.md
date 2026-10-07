@@ -3,13 +3,15 @@
 Calculadora trabalhista para advogados: telas simples, cálculo rigoroso e uma memória de cálculo
 que explica cada valor com a fórmula e o fundamento legal.
 
-**Versão atual (0.2)**:
+**Versão atual (0.3)**:
 
 - **Verbas rescisórias** em todas as modalidades de extinção, com INSS, IRRF, FGTS + multa e
   multas dos arts. 467 e 477.
 - **Horas extras, adicional noturno, insalubridade e periculosidade**, calculados mês a mês, com
   DSR, reflexos em 13º, férias + 1/3 e aviso prévio, FGTS + multa, prescrição quinquenal e valor
   por pedido para a petição inicial.
+- **Correção monetária e juros** pela ADC 58 e pela Lei nº 14.905/2024 (critério da SDI-1 do TST),
+  com índices oficiais do Banco Central atualizados todo mês.
 - Exportação em PDF e Excel (com demonstrativo mês a mês) e salvamento do caso em arquivo
   `.json` (nada fica armazenado no servidor).
 
@@ -39,13 +41,15 @@ tolaris/
     contrato.py         regras comuns (aviso proporcional, salário da época, FGTS)
     rescisao.py         verbas rescisórias
     horas_extras.py     horas extras, adicional noturno, insalubridade/periculosidade e reflexos
+    atualizacao.py      correção monetária e juros (IPCA-E, SELIC, IPCA, taxa legal, TR)
     tributos.py         INSS e IRRF
-  tabelas/              INSS, IRRF e salário mínimo por data de vigência (JSON)
+  tabelas/              INSS, IRRF, salário mínimo (por vigência) e índices do Banco Central (JSON)
   relatorios/           PDF e Excel
   interface/            telas Streamlit (só coletam dados e mostram o resultado)
                         e salvar/abrir caso em JSON
   datas.py, dinheiro.py regras de calendário e de valores (Decimal, arredondamento, R$)
-regras/                 livro de regras (rescisao.md, horas_extras.md), com fundamento
+scripts/                atualizar_indices.py: baixa os índices do Banco Central
+regras/                 livro de regras (rescisao.md, horas_extras.md, atualizacao.md), com fundamento
                         e os pontos para validação pelos advogados
 tests/                  testes com cenários calculados à mão
 ```
@@ -55,6 +59,12 @@ Princípio: **a interface nunca calcula**. Toda regra fica em `tolaris/motor`, d
 
 ## Atualizar tabelas
 
+**Índices de correção (IPCA-E, IPCA, SELIC, taxa legal, TR):** a rotina *Atualizar índices* do
+GitHub Actions roda todo dia 12, baixa os índices do Banco Central, roda os testes e grava
+`tolaris/tabelas/indices.json`. Para rodar na hora: aba *Actions* → *Atualizar índices* →
+*Run workflow*. Localmente: `python scripts/atualizar_indices.py`.
+
+**INSS, IRRF e salário mínimo:**
 Quando sair tabela nova de INSS, IRRF ou salário mínimo, acrescente um item ao JSON
 correspondente em `tolaris/tabelas/` com a data de `vigencia` e a `fonte`, e um teste em
 `tests/test_tributos.py` com um valor oficial divulgado.

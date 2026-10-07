@@ -13,6 +13,7 @@ from tolaris.datas import (
     dias_uteis_e_repousos,
     formatar_data,
     meses_entre,
+    primeiro_dia_do_mes,
     somar_meses,
     ultimo_dia_do_mes,
 )
@@ -342,9 +343,9 @@ class _Calculo:
                 selecionados.append((mes, peso))
         return selecionados
 
-    def _reflexo_13(self, pedido: _Pedido) -> tuple[Decimal, list[str]]:
+    def _reflexo_13(self, pedido: _Pedido) -> tuple[Decimal, list[str], list[tuple[date, Decimal]]]:
         d = self.d
-        total, partes = ZERO, []
+        total, partes, parcelas = ZERO, [], []
         for ano in range(self.meses[0].competencia.year, self.data_projetada.year + 1):
             ultimo_ano = ano >= d.desligamento.year
             if ultimo_ano and d.modalidade == Modalidade.JUSTA_CAUSA:
@@ -361,11 +362,13 @@ class _Calculo:
             if valor:
                 total += valor
                 partes.append(f"{ano}: ({memoria}) ÷ 12 = {formatar_brl(valor)}")
-        return total, partes
+                competencia = date(ano, 12, 1) if not ultimo_ano else primeiro_dia_do_mes(d.desligamento)
+                parcelas.append((competencia, valor))
+        return total, partes, parcelas
 
-    def _reflexo_ferias(self, pedido: _Pedido) -> tuple[Decimal, list[str]]:
+    def _reflexo_ferias(self, pedido: _Pedido) -> tuple[Decimal, list[str], list[tuple[date, Decimal]]]:
         d = self.d
-        total, partes = ZERO, []
+        total, partes, parcelas = ZERO, [], []
         k = 0
         while (inicio := somar_meses(d.admissao, 12 * k)) <= self.data_projetada:
             fim = somar_meses(d.admissao, 12 * (k + 1)) - UM_DIA
@@ -386,7 +389,8 @@ class _Calculo:
             if valor:
                 total += valor
                 partes.append(f"{formatar_data(inicio)} a {formatar_data(fim)}: {memoria} = {formatar_brl(valor)}")
-        return total, partes
+                parcelas.append((primeiro_dia_do_mes(min(fim + UM_DIA, d.desligamento)), valor))
+        return total, partes, parcelas
 
     def _reflexo_aviso(self, pedido: _Pedido) -> tuple[Decimal, str]:
         if not self.dias_aviso_indenizados:
@@ -408,11 +412,21 @@ class _Calculo:
 
     # ------------------------------------------------------------------ lançamentos
 
-    def _lancar(self, pedido, codigo, descricao, grupo, valor, formula, fundamento, natureza="Salarial"):
+    def _lancar(self, pedido, codigo, descricao, grupo, valor, formula, fundamento, natureza="Salarial", parcelas=()):
         valor = arredondar(valor)
         if valor > 0:
             self.lancamentos.append(
-                Lancamento(codigo, descricao, grupo, valor, natureza, formula, fundamento, pedido=pedido.nome)
+                Lancamento(
+                    codigo,
+                    descricao,
+                    grupo,
+                    valor,
+                    natureza,
+                    formula,
+                    fundamento,
+                    pedido=pedido.nome,
+                    parcelas=tuple(parcelas),
+                )
             )
         return valor
 
@@ -422,11 +436,14 @@ class _Calculo:
     def _pedido(self, pedido: _Pedido, principais: list[tuple[str, str, str]], dsr_campo: str | None):
         """principais: (campo de LinhaMensal, código, descrição)."""
         base_fgts = ZERO
+        parcelas_fgts: list[tuple[date, Decimal]] = []  # composição mensal da base do FGTS
         for campo, codigo, descricao in principais:
             linhas = [linha for linha in self.mensal if getattr(linha, campo) > 0]
             if not linhas:
                 continue
             total = sum((getattr(linha, campo) for linha in linhas), ZERO)
+            parcelas = [(linha.competencia, getattr(linha, campo)) for linha in linhas]
+            parcelas_fgts += parcelas
             base_fgts += self._lancar(
                 pedido,
                 codigo,
@@ -436,6 +453,7 @@ class _Calculo:
                 f"Soma de {len(linhas)} competência(s), de {self._periodo_texto(linhas)} "
                 "(valores mês a mês no demonstrativo mensal).",
                 pedido.fundamento_principal,
+                parcelas=parcelas,
             )
         if base_fgts == 0:
             return
@@ -444,6 +462,8 @@ class _Calculo:
         codigo, artigo = pedido.codigo, pedido.artigo
         if dsr_campo:
             dsr = sum((getattr(linha, dsr_campo) for linha in self.mensal), ZERO)
+            parcelas = [(linha.competencia, getattr(linha, dsr_campo)) for linha in self.mensal]
+            parcelas_fgts += parcelas
             base_fgts += self._lancar(
                 pedido,
                 f"{codigo}_dsr",
@@ -452,9 +472,11 @@ class _Calculo:
                 dsr,
                 "Em cada mês: valor ÷ dias úteis × domingos e feriados (demonstrativo mensal).",
                 "Lei nº 605/1949, art. 7º; Súmula 172 do TST. Feriados nacionais apenas.",
+                parcelas=parcelas,
             )
 
-        reflexo_13, partes = self._reflexo_13(pedido)
+        reflexo_13, partes, parcelas = self._reflexo_13(pedido)
+        parcelas_fgts += parcelas
         base_fgts += self._lancar(
             pedido,
             f"{codigo}_13",
@@ -463,8 +485,9 @@ class _Calculo:
             reflexo_13,
             "; ".join(partes),
             f"Súmula 45 do TST. {pedido.fundamento_reflexos}",
+            parcelas=parcelas,
         )
-        reflexo_ferias, partes = self._reflexo_ferias(pedido)
+        reflexo_ferias, partes, parcelas = self._reflexo_ferias(pedido)
         self._lancar(
             pedido,
             f"{codigo}_ferias",
@@ -474,8 +497,11 @@ class _Calculo:
             "; ".join(partes),
             f"Art. 142, §§ 5º e 6º, CLT; art. 7º, XVII, CF. {pedido.fundamento_reflexos}",
             "Indenizatória",
+            parcelas=parcelas,
         )
         reflexo_aviso, memoria = self._reflexo_aviso(pedido)
+        mes_rescisao = primeiro_dia_do_mes(self.d.desligamento)
+        parcelas_fgts.append((mes_rescisao, reflexo_aviso))
         base_fgts += self._lancar(
             pedido,
             f"{codigo}_aviso",
@@ -485,6 +511,7 @@ class _Calculo:
             memoria,
             f"Art. 487, § 5º, CLT. {pedido.fundamento_reflexos}",
             "Indenizatória",
+            parcelas=[(mes_rescisao, reflexo_aviso)],
         )
 
         fgts = self._lancar(
@@ -496,6 +523,7 @@ class _Calculo:
             f"8% × {formatar_brl(base_fgts)} (parcela, DSR, 13º e aviso; não incide sobre férias indenizadas)",
             "Art. 15, Lei nº 8.036/1990; Súmula 63 do TST; OJ 195 da SDI-1.",
             "FGTS",
+            parcelas=[(competencia, valor * ALIQUOTA_FGTS) for competencia, valor in parcelas_fgts if valor],
         )
         percentual = MULTA_FGTS.get(self.d.modalidade)
         if percentual:
@@ -514,6 +542,7 @@ class _Calculo:
                     else "Art. 18, § 1º, Lei nº 8.036/1990."
                 ),
                 "Indenizatória",
+                parcelas=[(mes_rescisao, fgts * percentual)],
             )
 
     # ------------------------------------------------------------------ execução

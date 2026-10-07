@@ -5,9 +5,11 @@ Nenhuma regra de cálculo fica aqui; tudo vem de `tolaris.motor`.
 
 import streamlit as st
 
+from tolaris.datas import formatar_data
 from tolaris.dinheiro import formatar_brl
 from tolaris.interface import formularios as f
 from tolaris.interface.caso import CAMPOS, TABELAS, formulario_de_json, formulario_para_json
+from tolaris.motor.atualizacao import ResultadoAtualizacao, atualizar
 from tolaris.motor.horas_extras import calcular_pedidos
 from tolaris.motor.modelos import ErroDeEntrada, Grupo, ResultadoCalculo, ResultadoPedidos
 from tolaris.motor.rescisao import calcular_rescisao
@@ -56,8 +58,8 @@ def _caso_atual() -> str:
     return formulario_para_json(campos, tabelas)
 
 
-def _metricas(resultado: ResultadoCalculo):
-    c1, c2, c3 = st.columns(3)
+def _metricas(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | None):
+    c1, c2, c3, c4 = st.columns(4)
     if isinstance(resultado, ResultadoPedidos):
         c1.metric("Parcelas e reflexos", formatar_brl(resultado.total_proventos))
         c2.metric("FGTS + multa", formatar_brl(resultado.total_fgts))
@@ -66,31 +68,70 @@ def _metricas(resultado: ResultadoCalculo):
         c1.metric("Líquido rescisório", formatar_brl(resultado.liquido))
         c2.metric("FGTS a depositar", formatar_brl(resultado.total_fgts), help="Depósito rescisório + multa")
         c3.metric("Total geral", formatar_brl(resultado.total_geral))
+    if atualizado:
+        c4.metric(
+            "Total atualizado",
+            formatar_brl(atualizado.total),
+            help=f"Com correção monetária e juros até {formatar_data(atualizado.atualizado_ate)}.",
+        )
 
 
-def _resultado(resultado: ResultadoCalculo, nome_arquivo: str):
+def _tabela_atualizacao(atualizado: ResultadoAtualizacao):
+    linhas = [
+        {
+            "Rubrica": linha.descricao,
+            "Original": formatar_brl(linha.valores.original),
+            "Correção": formatar_brl(linha.valores.correcao),
+            "SELIC": formatar_brl(linha.valores.selic),
+            "Juros": formatar_brl(linha.valores.juros),
+            "Atualizado": formatar_brl(linha.valores.total),
+        }
+        for linha in atualizado.linhas
+    ]
+    total = atualizado.soma()
+    linhas.append(
+        {
+            "Rubrica": "Total (proventos e FGTS)",
+            "Original": formatar_brl(total.original),
+            "Correção": formatar_brl(total.correcao),
+            "SELIC": formatar_brl(total.selic),
+            "Juros": formatar_brl(total.juros),
+            "Atualizado": formatar_brl(total.total),
+        }
+    )
+    st.dataframe(linhas, hide_index=True, width="stretch")
+
+
+def _resultado(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | None, nome_arquivo: str):
     st.divider()
     st.header("Resultado")
-    _metricas(resultado)
-    for alerta in resultado.alertas:
+    _metricas(resultado, atualizado)
+    for alerta in resultado.alertas + (atualizado.alertas if atualizado else []):
         st.warning(_md(alerta))
 
     abas = ["Demonstrativo"]
     if isinstance(resultado, ResultadoPedidos):
         abas.insert(0, "Valor por pedido")
         abas.append("Mês a mês")
+    if atualizado:
+        abas.append("Atualização")
     abas += ["Memória de cálculo", "Dados apurados"]
     guias = dict(zip(abas, st.tabs(abas), strict=True))
 
     if "Valor por pedido" in guias:
         with guias["Valor por pedido"]:
             st.caption("Valor de cada pedido com reflexos e FGTS, para a liquidação na inicial (art. 840, § 1º, CLT).")
-            st.dataframe(
-                [{"Pedido": p, "Valor": formatar_brl(v)} for p, v in resultado.por_pedido().items()]
-                + [{"Pedido": "Total", "Valor": formatar_brl(resultado.total_geral)}],
-                hide_index=True,
-                width="stretch",
-            )
+            atualizados = atualizado.por_pedido() if atualizado else {}
+            linhas = []
+            for pedido, valor in resultado.por_pedido().items():
+                linha = {"Pedido": pedido, "Valor histórico": formatar_brl(valor)}
+                if atualizado:
+                    linha["Valor atualizado"] = formatar_brl(atualizados[pedido].total)
+                linhas.append(linha)
+            total = {"Pedido": "Total", "Valor histórico": formatar_brl(resultado.total_geral)}
+            if atualizado:
+                total["Valor atualizado"] = formatar_brl(atualizado.total)
+            st.dataframe(linhas + [total], hide_index=True, width="stretch")
     with guias["Demonstrativo"]:
         for grupo in Grupo:
             itens = resultado.do_grupo(grupo)
@@ -113,6 +154,18 @@ def _resultado(resultado: ResultadoCalculo, nome_arquivo: str):
                 hide_index=True,
                 width="stretch",
             )
+    if "Atualização" in guias:
+        with guias["Atualização"]:
+            for linha in atualizado.criterio:
+                st.markdown(_md(f"- {linha}"))
+            _tabela_atualizacao(atualizado)
+            if atualizado.descontos:
+                st.markdown(
+                    _md(
+                        f"Descontos (não atualizados): {formatar_brl(atualizado.descontos)} · "
+                        f"**Total atualizado: {formatar_brl(atualizado.total)}**"
+                    )
+                )
     with guias["Memória de cálculo"]:
         st.caption("Como cada valor foi obtido, com o fundamento legal.")
         for item in resultado.lancamentos:
@@ -127,14 +180,14 @@ def _resultado(resultado: ResultadoCalculo, nome_arquivo: str):
     c1, c2, c3 = st.columns(3)
     c1.download_button(
         "Memória de cálculo (PDF)",
-        data=gerar_pdf(resultado),
+        data=gerar_pdf(resultado, atualizado),
         file_name=f"memoria_{nome_arquivo}.pdf",
         mime="application/pdf",
         width="stretch",
         type="primary",
     )
     c2.download_button(
-        "Planilha (Excel)", data=gerar_excel(resultado), file_name=f"{nome_arquivo}.xlsx", width="stretch"
+        "Planilha (Excel)", data=gerar_excel(resultado, atualizado), file_name=f"{nome_arquivo}.xlsx", width="stretch"
     )
     c3.download_button(
         "Salvar caso (.json)",
@@ -189,4 +242,13 @@ def main():
         for mensagem in erro.mensagens:
             st.error(_md(mensagem))
         return
-    _resultado(resultado, "rescisao" if rescisao else "horas_extras")
+    atualizado = None
+    parametros = f.parametros_atualizacao()
+    if parametros:
+        try:
+            dados = resultado.dados
+            atualizado = atualizar(resultado, parametros, dados.desligamento.replace(day=1))
+        except ErroDeEntrada as erro:
+            for mensagem in erro.mensagens:
+                st.warning(_md(f"Atualização não realizada: {mensagem}"))
+    _resultado(resultado, atualizado, "rescisao" if rescisao else "horas_extras")

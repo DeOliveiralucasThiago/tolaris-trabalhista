@@ -10,6 +10,7 @@ import streamlit as st
 
 from tolaris.dinheiro import arredondar
 from tolaris.interface.caso import CAMPOS
+from tolaris.motor.atualizacao import ParametrosAtualizacao
 from tolaris.motor.modelos import (
     AVISOS_PERMITIDOS,
     AdicionalOcupacional,
@@ -43,10 +44,12 @@ PADROES = {
     "adicional_inicio": None,
     "adicional_fim": None,
     "considerar_prescricao": True,
+    "atualizar": True,
+    "juros_pre_judiciais": True,
 }
 COLUNAS_PERIODO = {
-    "inicio": "Início",
-    "fim": "Fim",
+    "inicio": "Início (vazio = admissão)",
+    "fim": "Fim (vazio = desligamento)",
     "he_1": "HE 1º adicional (h/mês)",
     "he_2": "HE 2º adicional (h/mês)",
     "noturnas": "Horas noturnas (h/mês)",
@@ -73,6 +76,7 @@ def iniciar_estado():
     for chave, padrao in PADROES.items():
         st.session_state.setdefault(chave, padrao)
     st.session_state.setdefault("data_ajuizamento", date.today())
+    st.session_state.setdefault("data_atualizacao", date.today())
     for tabela in ("historico", "periodos"):
         st.session_state.setdefault(f"{tabela}_versao", 0)
         st.session_state.setdefault(f"{tabela}_inicial", [])
@@ -223,6 +227,8 @@ def secoes_rescisao():
         c3.number_input("Dependentes para IR", min_value=0, step=1, key="dependentes_ir")
         c3.number_input("Outros descontos (R$)", min_value=0.0, step=50.0, key="outros_descontos")
 
+    secao_ajuizamento_e_atualizacao(5, com_prescricao=False)
+
 
 def dados_rescisao() -> DadosRescisao:
     e = st.session_state
@@ -306,20 +312,50 @@ def secoes_pedidos():
                 c3.date_input("Adicional devido desde", format="DD/MM/YYYY", key="adicional_inicio")
                 c4.date_input("Adicional devido até", format="DD/MM/YYYY", key="adicional_fim")
 
+    secao_ajuizamento_e_atualizacao(5, com_prescricao=True)
+
+
+def secao_ajuizamento_e_atualizacao(numero: int, com_prescricao: bool):
+    titulo = "Ajuizamento, prescrição e atualização" if com_prescricao else "Ajuizamento e atualização"
     with st.container(border=True):
-        st.subheader("5. Prescrição")
-        c1, c2 = st.columns(2)
-        if c1.checkbox(
-            "Aplicar prescrição quinquenal",
-            key="considerar_prescricao",
-            help="Exclui as parcelas anteriores a 5 anos da data do ajuizamento (art. 7º, XXIX, CF).",
-        ):
-            c2.date_input(
-                "Data do ajuizamento (ou prevista)",
-                format="DD/MM/YYYY",
-                key="data_ajuizamento",
-                help="Para a petição inicial, use a data prevista de distribuição.",
+        st.subheader(f"{numero}. {titulo}")
+        c1, c2, c3 = st.columns(3)
+        c1.date_input(
+            "Data do ajuizamento (ou prevista)",
+            format="DD/MM/YYYY",
+            key="data_ajuizamento",
+            help="Para a petição inicial, use a data prevista de distribuição: todo o período será "
+            "tratado como fase pré-judicial.",
+        )
+        if com_prescricao:
+            c1.checkbox(
+                "Aplicar prescrição quinquenal",
+                key="considerar_prescricao",
+                help="Exclui as parcelas anteriores a 5 anos da data do ajuizamento (art. 7º, XXIX, CF).",
             )
+        if c2.checkbox(
+            "Atualizar valores (correção e juros)",
+            key="atualizar",
+            help="ADC 58 do STF e Lei nº 14.905/2024, conforme a SDI-1 do TST.",
+        ):
+            c2.date_input("Atualizar até", format="DD/MM/YYYY", key="data_atualizacao")
+            c3.checkbox(
+                "Juros antes do ajuizamento",
+                key="juros_pre_judiciais",
+                help="Fase pré-judicial: TR (art. 39, caput, Lei nº 8.177/1991) até 29/08/2024 e taxa legal "
+                "depois. Desmarque se o juízo aplica juros só a partir do ajuizamento (art. 883 da CLT).",
+            )
+
+
+def parametros_atualizacao() -> ParametrosAtualizacao | None:
+    e = st.session_state
+    if not e.get("atualizar") or not e.get("data_atualizacao"):
+        return None
+    return ParametrosAtualizacao(
+        data_atualizacao=e["data_atualizacao"],
+        data_ajuizamento=e.get("data_ajuizamento"),
+        juros_pre_judiciais=bool(e.get("juros_pre_judiciais")),
+    )
 
 
 def periodos_jornada(admissao: date, desligamento: date) -> list[PeriodoJornada]:

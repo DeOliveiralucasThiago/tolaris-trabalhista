@@ -6,6 +6,7 @@ from fpdf import FPDF
 from fpdf.enums import XPos, YPos
 
 from tolaris.dinheiro import formatar_brl
+from tolaris.motor.atualizacao import ResultadoAtualizacao
 from tolaris.motor.modelos import Grupo, ResultadoCalculo
 from tolaris.relatorios.mensal import colunas_ativas, formatar
 
@@ -90,7 +91,41 @@ def _demonstrativo_mensal(pdf: FPDF, resultado: ResultadoCalculo, numero: int) -
     return numero + 1
 
 
-def gerar_pdf(resultado: ResultadoCalculo) -> bytes:
+def _atualizacao(pdf: FPDF, atualizado: ResultadoAtualizacao, numero: int) -> int:
+    _secao(pdf, f"{numero}. Correção monetária e juros")
+    pdf.set_font("Helvetica", "", 8.5)
+    for linha in atualizado.criterio:
+        pdf.multi_cell(0, 4.5, _texto(f"- {linha}"), **NOVA_LINHA)
+    pdf.ln(2)
+    larguras = (70, 24, 24, 24, 24, 24)
+    titulos = ("Rubrica", "Original", "Correção", "SELIC", "Juros", "Atualizado")
+    pdf.set_font("Helvetica", "B", 7.5)
+    pdf.set_fill_color(*AZUL)
+    pdf.set_text_color(255, 255, 255)
+    for largura, titulo in zip(larguras, titulos, strict=True):
+        pdf.cell(largura, 6, _texto(titulo), border=1, align="C", fill=True)
+    pdf.ln()
+    pdf.set_text_color(0, 0, 0)
+
+    def linha(rotulo, valores, negrito=False):
+        pdf.set_font("Helvetica", "B" if negrito else "", 7.5)
+        celulas = (rotulo, valores.original, valores.correcao, valores.selic, valores.juros, valores.total)
+        for indice, (largura, valor) in enumerate(zip(larguras, celulas, strict=True)):
+            texto = valor if indice == 0 else formatar_brl(valor)
+            pdf.cell(largura, 5, _texto(texto)[:48], border=1, align="L" if indice == 0 else "R")
+        pdf.ln()
+
+    for item in atualizado.linhas:
+        linha(item.descricao, item.valores)
+    linha("Total (proventos e FGTS)", atualizado.soma(), negrito=True)
+    pdf.ln(2)
+    if atualizado.descontos:
+        _linha_valor(pdf, "Descontos (não atualizados)", atualizado.descontos)
+    _linha_valor(pdf, "TOTAL ATUALIZADO", atualizado.total, negrito=True, preenchido=True)
+    return numero + 1
+
+
+def gerar_pdf(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | None = None) -> bytes:
     pdf = _Documento()
     pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
@@ -128,6 +163,8 @@ def gerar_pdf(resultado: ResultadoCalculo) -> bytes:
         _linha_valor(pdf, rotulo.upper() if destaque else rotulo, valor, negrito=True, preenchido=destaque)
 
     numero = _demonstrativo_mensal(pdf, resultado, 3)
+    if atualizado:
+        numero = _atualizacao(pdf, atualizado, numero)
 
     _secao(pdf, f"{numero}. Memória de cálculo")
     for item in resultado.lancamentos:

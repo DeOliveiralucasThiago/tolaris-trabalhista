@@ -30,8 +30,8 @@ def test_app_calcula_horas_extras():
     app = AppTest.from_file(APP, default_timeout=30)
     app.session_state["periodos_inicial"] = [
         {
-            "Início": None,
-            "Fim": None,
+            "Início (vazio = admissão)": None,
+            "Fim (vazio = desligamento)": None,
             "HE 1º adicional (h/mês)": 20.0,
             "HE 2º adicional (h/mês)": 0.0,
             "Horas noturnas (h/mês)": 0.0,

@@ -105,6 +105,9 @@ class Lancamento:
     formula: str
     fundamento: str
     pedido: str = ""  # pedido a que pertence (ex.: "Horas extras"), para o valor por pedido da inicial
+    # Composição por competência (mês de referência, valor), usada na correção monetária.
+    # Vazio = valor inteiro na competência do desligamento.
+    parcelas: tuple[tuple[date, Decimal], ...] = ()
 
 
 @dataclass

@@ -4,12 +4,12 @@
     {"vigencia": "2019-01-01", "valor": "998.00", "fonte": "Decreto nº 9.661/2019"},
     {"vigencia": "2020-01-01", "valor": "1039.00", "fonte": "MP nº 916/2019"},
     {"vigencia": "2020-02-01", "valor": "1045.00", "fonte": "MP nº 919/2020"},
-    {"vigencia": "2021-01-01", "valor": "1100.00", "fonte": "MP nº 1.021/2020"},
+    {"vigencia": "2021-01-01", "valor": "1100.00", "fonte": "MP nº 1.021/2020, convertida na Lei nº 14.158/2021"},
     {"vigencia": "2022-01-01", "valor": "1212.00", "fonte": "MP nº 1.091/2021"},
     {"vigencia": "2023-01-01", "valor": "1302.00", "fonte": "MP nº 1.143/2022"},
     {"vigencia": "2023-05-01", "valor": "1320.00", "fonte": "MP nº 1.172/2023"},
     {"vigencia": "2024-01-01", "valor": "1412.00", "fonte": "Decreto nº 11.864/2023"},
     {"vigencia": "2025-01-01", "valor": "1518.00", "fonte": "Decreto nº 12.342/2024"},
-    {"vigencia": "2026-01-01", "valor": "1621.00", "fonte": "Decreto de reajuste do salário mínimo 2026"}
+    {"vigencia": "2026-01-01", "valor": "1621.00", "fonte": "Decreto nº 12.797/2025"}
   ]
 }
