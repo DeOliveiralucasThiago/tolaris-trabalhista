@@ -1,0 +1,81 @@
+{
+  "descricao": "Tabela progressiva mensal do IRRF. Cada tabela vale a partir de 'vigencia' até a vigência da tabela seguinte. 'parcela' é a parcela a deduzir do imposto; a última faixa ('ate': null) não tem limite.",
+  "tabelas": [
+    {
+      "vigencia": "2015-04-01",
+      "fonte": "Lei nº 13.149/2015",
+      "deducao_dependente": "189.59",
+      "desconto_simplificado": null,
+      "redutor": null,
+      "faixas": [
+        {"ate": "1903.98", "aliquota": "0", "parcela": "0"},
+        {"ate": "2826.65", "aliquota": "0.075", "parcela": "142.80"},
+        {"ate": "3751.05", "aliquota": "0.15", "parcela": "354.80"},
+        {"ate": "4664.68", "aliquota": "0.225", "parcela": "636.13"},
+        {"ate": null, "aliquota": "0.275", "parcela": "869.36"}
+      ]
+    },
+    {
+      "vigencia": "2023-05-01",
+      "fonte": "MP nº 1.171/2023, convertida na Lei nº 14.663/2023",
+      "deducao_dependente": "189.59",
+      "desconto_simplificado": "528.00",
+      "redutor": null,
+      "faixas": [
+        {"ate": "2112.00", "aliquota": "0", "parcela": "0"},
+        {"ate": "2826.65", "aliquota": "0.075", "parcela": "158.40"},
+        {"ate": "3751.05", "aliquota": "0.15", "parcela": "370.40"},
+        {"ate": "4664.68", "aliquota": "0.225", "parcela": "651.73"},
+        {"ate": null, "aliquota": "0.275", "parcela": "884.96"}
+      ]
+    },
+    {
+      "vigencia": "2024-02-01",
+      "fonte": "MP nº 1.206/2024, convertida na Lei nº 14.848/2024",
+      "deducao_dependente": "189.59",
+      "desconto_simplificado": "564.80",
+      "redutor": null,
+      "faixas": [
+        {"ate": "2259.20", "aliquota": "0", "parcela": "0"},
+        {"ate": "2826.65", "aliquota": "0.075", "parcela": "169.44"},
+        {"ate": "3751.05", "aliquota": "0.15", "parcela": "381.44"},
+        {"ate": "4664.68", "aliquota": "0.225", "parcela": "662.77"},
+        {"ate": null, "aliquota": "0.275", "parcela": "896.00"}
+      ]
+    },
+    {
+      "vigencia": "2025-05-01",
+      "fonte": "MP nº 1.294/2025, convertida na Lei nº 15.191/2025",
+      "deducao_dependente": "189.59",
+      "desconto_simplificado": "607.20",
+      "redutor": null,
+      "faixas": [
+        {"ate": "2428.80", "aliquota": "0", "parcela": "0"},
+        {"ate": "2826.65", "aliquota": "0.075", "parcela": "182.16"},
+        {"ate": "3751.05", "aliquota": "0.15", "parcela": "394.16"},
+        {"ate": "4664.68", "aliquota": "0.225", "parcela": "675.49"},
+        {"ate": null, "aliquota": "0.275", "parcela": "908.73"}
+      ]
+    },
+    {
+      "vigencia": "2026-01-01",
+      "fonte": "Lei nº 15.270/2025 (redução mensal do imposto) sobre a tabela da Lei nº 15.191/2025",
+      "deducao_dependente": "189.59",
+      "desconto_simplificado": "607.20",
+      "redutor": {
+        "isencao_ate": "5000.00",
+        "reducao_maxima": "312.89",
+        "decrescente_ate": "7350.00",
+        "constante": "978.62",
+        "coeficiente": "0.133145"
+      },
+      "faixas": [
+        {"ate": "2428.80", "aliquota": "0", "parcela": "0"},
+        {"ate": "2826.65", "aliquota": "0.075", "parcela": "182.16"},
+        {"ate": "3751.05", "aliquota": "0.15", "parcela": "394.16"},
+        {"ate": "4664.68", "aliquota": "0.225", "parcela": "675.49"},
+        {"ate": null, "aliquota": "0.275", "parcela": "908.73"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,113 @@
+{
+  "descricao": "Contribuição previdenciária do segurado empregado, doméstico e avulso. Cada tabela vale a partir de 'vigencia' até a vigência da tabela seguinte.",
+  "tabelas": [
+    {
+      "vigencia": "2019-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria ME nº 9/2019",
+      "faixas": [
+        {"ate": "1751.81", "aliquota": "0.08"},
+        {"ate": "2919.72", "aliquota": "0.09"},
+        {"ate": "5839.45", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2020-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria SEPRT/ME nº 914/2020",
+      "faixas": [
+        {"ate": "1830.29", "aliquota": "0.08"},
+        {"ate": "3050.52", "aliquota": "0.09"},
+        {"ate": "6101.06", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2020-03-01",
+      "tipo": "progressiva",
+      "fonte": "EC nº 103/2019 e Portaria SEPRT/ME nº 3.659/2020",
+      "faixas": [
+        {"ate": "1045.00", "aliquota": "0.075"},
+        {"ate": "2089.60", "aliquota": "0.09"},
+        {"ate": "3134.40", "aliquota": "0.12"},
+        {"ate": "6101.06", "aliquota": "0.14"}
+      ]
+    },
+    {
+      "vigencia": "2021-01-01",
+      "tipo": "progressiva",
+      "fonte": "Portaria SEPRT/ME nº 477/2021",
+      "faixas": [
+        {"ate": "1100.00", "aliquota": "0.075"},
+        {"ate": "2203.48", "aliquota": "0.09"},
+        {"ate": "3305.22", "aliquota": "0.12"},
+        {"ate": "6433.57", "aliquota": "0.14"}
+      ]
+    },
+    {
+      "vigencia": "2022-01-01",
+      "tipo": "progressiva",
+      "fonte": "Portaria Interministerial MTP/ME nº 12/2022",
+      "faixas": [
+        {"ate": "1212.00", "aliquota": "0.075"},
+        {"ate": "2427.35", "aliquota": "0.09"},
+        {"ate": "3641.03", "aliquota": "0.12"},
+        {"ate": "7087.22", "aliquota": "0.14"}
+      ]
+    },
+    {
+      "vigencia": "2023-01-01",
+      "tipo": "progressiva",
+      "fonte": "Portaria Interministerial MPS/MF nº 26/2023",
+      "faixas": [
+        {"ate": "1302.00", "aliquota": "0.075"},
+        {"ate": "2571.29", "aliquota": "0.09"},
+        {"ate": "3856.94", "aliquota": "0.12"},
+        {"ate": "7507.49", "aliquota": "0.14"}
+      ]
+    },
+    {
+      "vigencia": "2023-05-01",
+      "tipo": "progressiva",
+      "fonte": "Portaria Interministerial MPS/MF nº 27/2023",
+      "faixas": [
+        {"ate": "1320.00", "aliquota": "0.075"},
+        {"ate": "2571.29", "aliquota": "0.09"},
+        {"ate": "3856.94", "aliquota": "0.12"},
+        {"ate": "7507.49", "aliquota": "0.14"}
+      ]
+    },
+    {
+      "vigencia": "2024-01-01",
+      "tipo": "progressiva",
+      "fonte": "Portaria Interministerial MPS/MF nº 2/2024",
+      "faixas": [
+        {"ate": "1412.00", "aliquota": "0.075"},
+        {"ate": "2666.68", "aliquota": "0.09"},
+        {"ate": "4000.03", "aliquota": "0.12"},
+        {"ate": "7786.02", "aliquota": "0.14"}
+      ]
+    },
+    {
+      "vigencia": "2025-01-01",
+      "tipo": "progressiva",
+      "fonte": "Portaria Interministerial MPS/MF nº 6/2025",
+      "faixas": [
+        {"ate": "1518.00", "aliquota": "0.075"},
+        {"ate": "2793.88", "aliquota": "0.09"},
+        {"ate": "4190.83", "aliquota": "0.12"},
+        {"ate": "8157.41", "aliquota": "0.14"}
+      ]
+    },
+    {
+      "vigencia": "2026-01-01",
+      "tipo": "progressiva",
+      "fonte": "Portaria Interministerial MPS/MF nº 13/2026",
+      "faixas": [
+        {"ate": "1621.00", "aliquota": "0.075"},
+        {"ate": "2902.84", "aliquota": "0.09"},
+        {"ate": "4354.27", "aliquota": "0.12"},
+        {"ate": "8475.55", "aliquota": "0.14"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.streamlit/secrets.toml
+.streamlit/credentials.toml
+machine_id*
+*.pdf
+*.xlsx
+.DS_Store
