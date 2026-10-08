@@ -35,7 +35,16 @@ def test_irrf_muda_de_tabela_na_vigencia():
 
 def test_sem_tabela_para_data_antiga():
     with pytest.raises(TabelaIndisponivel):
-        inss_vigente(date(2018, 12, 31))
+        inss_vigente(date(2007, 12, 31))
+
+
+def test_inss_tabelas_antigas_de_aliquota_unica():
+    # 2010: 1.024,97 até maio (PI 350/2009) e 1.040,22 a partir de junho (PI 333/2010)
+    assert inss_vigente(date(2010, 5, 1)).faixas[0].ate == Decimal("1024.97")
+    assert inss_vigente(date(2010, 6, 1)).faixas[0].ate == Decimal("1040.22")
+    assert inss_vigente(date(2011, 3, 1)).teto == Decimal("3691.74")  # PI 407/2011, desde a competência 01/2011
+    assert calcular_inss(Decimal("2000"), date(2015, 6, 1)).valor == Decimal("180.00")  # 9%
+    assert calcular_inss(Decimal("10000"), date(2018, 6, 1)).valor == Decimal("621.04")  # 11% × teto 5.645,80
 
 
 def test_irrf_usa_desconto_simplificado_quando_maior():
@@ -98,3 +107,20 @@ def test_salario_minimo_confere_mes_a_mes_com_o_banco_central():
         if nosso != Decimal(valor):
             divergencias.append(f"{mes}: tabela {nosso}, Banco Central {valor}")
     assert not divergencias, divergencias
+
+
+def test_irrf_acumulado_multiplica_faixas_pelo_numero_de_meses():
+    from tolaris.motor.tributos import calcular_irrf_rra
+
+    # 2024: base 20.000 − 1.000 = 19.000 > 4.664,68 × 3 → 19.000 × 27,5% − 896,00 × 3 = 2.537,00
+    assert calcular_irrf_rra(Decimal("20000"), Decimal("1000"), 3, date(2024, 6, 1)).valor == Decimal("2537.00")
+    # Isento: 6.000 em 3 meses (até 2.259,20 × 3 = 6.777,60)
+    assert calcular_irrf_rra(Decimal("6000"), Decimal("0"), 3, date(2024, 6, 1)).valor == 0
+
+
+def test_irrf_acumulado_2026_com_reducao_multiplicada_pelo_numero_de_meses():
+    from tolaris.motor.tributos import calcular_irrf_rra
+
+    # 18.000 em 3 meses: 18.000 × 27,5% − 908,73 × 3 = 2.223,81
+    # Redução: 978,62 × 3 − 0,133145 × 18.000 = 539,25 → 1.684,56
+    assert calcular_irrf_rra(Decimal("18000"), Decimal("0"), 3, date(2026, 6, 1)).valor == Decimal("1684.56")

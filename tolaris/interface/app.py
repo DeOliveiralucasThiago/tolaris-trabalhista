@@ -11,6 +11,7 @@ from tolaris.interface import formularios as f
 from tolaris.interface.caso import CAMPOS, TABELAS, formulario_de_json, formulario_para_json
 from tolaris.motor.atualizacao import ResultadoAtualizacao, atualizar
 from tolaris.motor.horas_extras import calcular_pedidos
+from tolaris.motor.liquidacao import ResultadoLiquidacao, calcular_liquidacao
 from tolaris.motor.modelos import ErroDeEntrada, Grupo, ResultadoCalculo, ResultadoPedidos
 from tolaris.motor.rescisao import calcular_rescisao
 from tolaris.relatorios.excel import gerar_excel
@@ -19,6 +20,7 @@ from tolaris.relatorios.pdf import TITULOS_GRUPO, gerar_pdf
 
 MODO_RESCISAO = "Verbas rescisórias"
 MODO_PEDIDOS = "Horas extras e adicionais"
+MODO_LIQUIDACAO = "Liquidação de sentença"
 
 CSS = """
 <style>
@@ -60,6 +62,17 @@ def _caso_atual() -> str:
 
 def _metricas(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | None):
     c1, c2, c3, c4 = st.columns(4)
+    if isinstance(resultado, ResultadoLiquidacao):
+        c1.metric("Líquido do reclamante", formatar_brl(resultado.liquido_reclamante))
+        c2.metric("FGTS a depositar", formatar_brl(resultado.fgts_atualizado), help="Depósitos + multa, atualizados")
+        c3.metric(
+            "INSS e IR",
+            formatar_brl(
+                resultado.inss_segurado + resultado.inss_empresa + resultado.inss_acrescimos + resultado.irrf.valor
+            ),
+        )
+        c4.metric("Total devido pela reclamada", formatar_brl(resultado.total_reclamada))
+        return
     if isinstance(resultado, ResultadoPedidos):
         c1.metric("Parcelas e reflexos", formatar_brl(resultado.total_proventos))
         c2.metric("FGTS + multa", formatar_brl(resultado.total_fgts))
@@ -102,25 +115,88 @@ def _tabela_atualizacao(atualizado: ResultadoAtualizacao):
     st.dataframe(linhas, hide_index=True, width="stretch")
 
 
+def _quadro_liquidacao(resultado: ResultadoLiquidacao):
+    secao_atual = None
+    for secao, rotulo, valor, destaque in resultado.quadro:
+        if secao != secao_atual:
+            st.markdown(f"**{secao}**")
+            secao_atual = secao
+        texto = f"{rotulo}: {formatar_brl(valor)}"
+        st.markdown(_md(f"**{texto}**" if destaque else f"- {texto}"))
+
+
+def _tabela_inss(resultado: ResultadoLiquidacao):
+    st.caption(
+        "Regime de competência (Súmula 368, IV e V, do TST): tabela de cada mês; 13º em separado. "
+        "A cota do reclamante é descontada do crédito pelo valor histórico; os acréscimos ficam com a reclamada."
+    )
+    linhas = [
+        {
+            "Competência": f"{linha.competencia:%m/%Y}" + (" (13º)" if linha.decimo_terceiro else ""),
+            "Verbas deferidas": formatar_brl(linha.base_devida),
+            "Salário já pago": formatar_brl(linha.base_paga),
+            "Cota do reclamante": formatar_brl(linha.segurado),
+            "Cota da reclamada": formatar_brl(linha.empresa),
+            "Acréscimos": formatar_brl(linha.acrescimos),
+            "Critério": linha.criterio,
+        }
+        for linha in resultado.inss
+    ]
+    linhas.append(
+        {
+            "Competência": "Total",
+            "Verbas deferidas": formatar_brl(sum((linha.base_devida for linha in resultado.inss), 0)),
+            "Salário já pago": "",
+            "Cota do reclamante": formatar_brl(resultado.inss_segurado),
+            "Cota da reclamada": formatar_brl(resultado.inss_empresa),
+            "Acréscimos": formatar_brl(resultado.inss_acrescimos),
+            "Critério": "",
+        }
+    )
+    st.dataframe(linhas, hide_index=True, width="stretch")
+
+
 def _resultado(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | None, nome_arquivo: str):
     st.divider()
     st.header("Resultado")
     _metricas(resultado, atualizado)
-    for alerta in resultado.alertas + (atualizado.alertas if atualizado else []):
+    liquidacao = isinstance(resultado, ResultadoLiquidacao)
+    alertas = list(resultado.alertas)
+    if atualizado and not liquidacao:  # na liquidação, os alertas da atualização já estão no resultado
+        alertas += atualizado.alertas
+    for alerta in alertas:
         st.warning(_md(alerta))
 
     abas = ["Demonstrativo"]
     if isinstance(resultado, ResultadoPedidos):
         abas.insert(0, "Valor por pedido")
-        abas.append("Mês a mês")
+        if resultado.mensal:
+            abas.append("Mês a mês")
+    if liquidacao:
+        abas.insert(0, "Resumo da liquidação")
     if atualizado:
         abas.append("Atualização")
+    if liquidacao:
+        abas += ["INSS", "Imposto de renda"]
     abas += ["Memória de cálculo", "Dados apurados"]
     guias = dict(zip(abas, st.tabs(abas), strict=True))
 
+    if liquidacao:
+        with guias["Resumo da liquidação"]:
+            _quadro_liquidacao(resultado)
+        with guias["INSS"]:
+            _tabela_inss(resultado)
+        with guias["Imposto de renda"]:
+            st.caption("Rendimentos recebidos acumuladamente (art. 12-A da Lei nº 7.713/1988; Súmula 368, VI, do TST).")
+            st.markdown(_md(resultado.irrf.memoria))
+            st.markdown(_md(f"**IR retido: {formatar_brl(resultado.irrf.valor)}**"))
+
     if "Valor por pedido" in guias:
         with guias["Valor por pedido"]:
-            st.caption("Valor de cada pedido com reflexos e FGTS, para a liquidação na inicial (art. 840, § 1º, CLT).")
+            if not liquidacao:
+                st.caption(
+                    "Valor de cada pedido com reflexos e FGTS, para a liquidação na inicial (art. 840, § 1º, CLT)."
+                )
             atualizados = atualizado.por_pedido() if atualizado else {}
             linhas = []
             for pedido, valor in resultado.por_pedido().items():
@@ -219,28 +295,38 @@ def main():
         if st.session_state.get("erro_caso"):
             st.error(st.session_state["erro_caso"])
 
-    modo = st.radio("O que você quer calcular?", [MODO_RESCISAO, MODO_PEDIDOS], horizontal=True, key="modo")
+    modo = st.radio(
+        "O que você quer calcular?", [MODO_RESCISAO, MODO_PEDIDOS, MODO_LIQUIDACAO], horizontal=True, key="modo"
+    )
     rescisao = modo == MODO_RESCISAO
+    liquidacao = modo == MODO_LIQUIDACAO
 
-    f.secao_contrato(modo_rescisao=rescisao)
+    f.secao_contrato(modo_rescisao=modo != MODO_PEDIDOS)
     f.secao_extincao()
     if rescisao:
         f.secoes_rescisao()
+    elif liquidacao:
+        f.secoes_liquidacao()
     else:
         f.secoes_pedidos()
 
-    pendencias = f.pendencias_contrato()
+    pendencias = f.pendencias_contrato() + (f.pendencias_liquidacao() if liquidacao else [])
     if pendencias:
         st.info(f"Para calcular, preencha: {', '.join(pendencias)}.")
         return
     try:
-        if rescisao:
+        if liquidacao:
+            resultado = calcular_liquidacao(f.dados_liquidacao())
+        elif rescisao:
             resultado = calcular_rescisao(f.dados_rescisao())
         else:
             resultado = calcular_pedidos(f.dados_pedidos())
     except ErroDeEntrada as erro:
         for mensagem in erro.mensagens:
             st.error(_md(mensagem))
+        return
+    if liquidacao:
+        _resultado(resultado, resultado.atualizado, "liquidacao")
         return
     atualizado = None
     parametros = f.parametros_atualizacao()

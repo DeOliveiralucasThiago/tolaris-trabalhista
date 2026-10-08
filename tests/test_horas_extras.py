@@ -16,6 +16,7 @@ from tolaris.motor.modelos import (
     AdicionalOcupacional,
     Aviso,
     DadosPedidos,
+    DsrNosReflexos,
     ErroDeEntrada,
     Modalidade,
     PeriodoJornada,
@@ -72,6 +73,29 @@ def test_a_partir_de_abril_de_2023_o_dsr_entra_nos_reflexos():
     # Aviso: (60 + 11,0256) h ÷ 3 meses × 10 × 1,5 = 355,13
     assert v["he_aviso"] == Decimal("355.13")
     assert v["he_fgts"] == Decimal("123.14")
+
+
+def test_sentenca_pode_afastar_ou_estender_o_dsr_nos_reflexos():
+    # Sem DSR nos reflexos mesmo em 2025: 13º = 80 h × 10 × 1,5 ÷ 12
+    v = valores(calcular_pedidos(dados(ano=2025, dsr_nos_reflexos=DsrNosReflexos.NUNCA)))
+    assert v["he_13"] == Decimal("100.00")
+    assert v["he_aviso"] == Decimal("300.00")
+    # DSR em todo o período, em 2022: horas de DSR 20 × 6/25 + 20 × 4/24 + 20 × 4/27 + (abr) 20 × 5/25
+    # = 15,0963 h → 13º = (80 + 15,0963) × 10 × 1,5 ÷ 12 = 118,87
+    v = valores(calcular_pedidos(dados(dsr_nos_reflexos=DsrNosReflexos.SEMPRE)))
+    assert v["he_13"] == Decimal("118.87")
+
+
+def test_base_da_insalubridade_fixada_na_sentenca():
+    r = calcular_pedidos(
+        dados(
+            ano=2025,
+            adicional_ocupacional=AdicionalOcupacional.INSALUBRIDADE_MEDIO,
+            base_insalubridade=Decimal("2000"),
+        )
+    )
+    assert valores(r)["adicional"] == Decimal("1200.00")  # 20% × 2.000 × 3 meses
+    assert r.resumo["Base da insalubridade"] == "R$ 2.000,00"
 
 
 def test_horas_com_segundo_adicional():

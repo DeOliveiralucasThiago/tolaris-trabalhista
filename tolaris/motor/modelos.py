@@ -198,6 +198,25 @@ PERCENTUAIS_ADICIONAL = {
 }
 
 
+class DsrNosReflexos(StrEnum):
+    """Repercussão do DSR majorado pelas horas extras no 13º, nas férias e no aviso (OJ 394 da SDI-1)."""
+
+    OJ_394_ATUAL = "oj394_atual"  # redação do IRR de 2023: a partir de 04/2023
+    NUNCA = "nunca"  # redação anterior da OJ 394
+    SEMPRE = "sempre"  # todo o período (quando a sentença assim determinar)
+
+    @property
+    def rotulo(self) -> str:
+        return ROTULOS_DSR[self]
+
+
+ROTULOS_DSR = {
+    DsrNosReflexos.OJ_394_ATUAL: "A partir de 04/2023 (OJ 394, IRR de 2023)",
+    DsrNosReflexos.NUNCA: "Não repercute (redação anterior da OJ 394)",
+    DsrNosReflexos.SEMPRE: "Repercute em todo o período",
+}
+
+
 @dataclass(frozen=True)
 class PeriodoJornada:
     """Média mensal de horas devidas e não pagas num período do contrato."""
@@ -231,6 +250,9 @@ class DadosPedidos:
     adicional_inicio: date | None = None  # None = desde a admissão
     adicional_fim: date | None = None  # None = até o desligamento
     adicional_ja_pago: bool = False  # se já era pago, só integra a base das horas extras
+    # Base mensal da insalubridade fixada na sentença ou em norma coletiva; None = salário mínimo
+    base_insalubridade: Decimal | None = None
+    dsr_nos_reflexos: DsrNosReflexos = DsrNosReflexos.OJ_394_ATUAL
 
 
 @dataclass(frozen=True)
@@ -281,3 +303,83 @@ class ErroDeEntrada(ValueError):
     def __init__(self, mensagens: list[str]):
         super().__init__("; ".join(mensagens))
         self.mensagens = mensagens
+
+
+# ---------------------------------------------------------------- liquidação de sentença
+
+
+class VerbaRescisoria(StrEnum):
+    """Grupos de verbas rescisórias que a sentença pode deferir."""
+
+    SALDO_SALARIO = "saldo_salario"
+    AVISO_PREVIO = "aviso_previo"
+    DECIMO_TERCEIRO = "decimo_terceiro"
+    FERIAS = "ferias"
+    MULTA_477 = "multa_477"
+    MULTA_467 = "multa_467"
+    FGTS = "fgts"
+
+    @property
+    def rotulo(self) -> str:
+        return ROTULOS_VERBA_RESCISORIA[self]
+
+
+ROTULOS_VERBA_RESCISORIA = {
+    VerbaRescisoria.SALDO_SALARIO: "Saldo de salário",
+    VerbaRescisoria.AVISO_PREVIO: "Aviso prévio indenizado",
+    VerbaRescisoria.DECIMO_TERCEIRO: "13º salário proporcional",
+    VerbaRescisoria.FERIAS: "Férias + 1/3",
+    VerbaRescisoria.MULTA_477: "Multa do art. 477",
+    VerbaRescisoria.MULTA_467: "Multa do art. 467",
+    VerbaRescisoria.FGTS: "FGTS rescisório e multa",
+}
+
+
+class NaturezaPagamento(StrEnum):
+    SALARIAL = "salarial"  # integra a base de INSS e IR
+    DECIMO_TERCEIRO = "decimo_terceiro"  # 13º: base do INSS em separado
+    INDENIZATORIA = "indenizatoria"  # não integra INSS nem IR
+
+    @property
+    def rotulo(self) -> str:
+        return ROTULOS_NATUREZA_PAGAMENTO[self]
+
+
+ROTULOS_NATUREZA_PAGAMENTO = {
+    NaturezaPagamento.SALARIAL: "Salarial",
+    NaturezaPagamento.DECIMO_TERCEIRO: "13º salário",
+    NaturezaPagamento.INDENIZATORIA: "Indenizatória",
+}
+
+
+@dataclass(frozen=True)
+class ValorPago:
+    """Valor já pago sob o mesmo título, a deduzir da condenação."""
+
+    descricao: str
+    competencia: date
+    valor: Decimal
+    natureza: NaturezaPagamento = NaturezaPagamento.SALARIAL
+    abater_fgts: bool = False  # o FGTS (e a multa) desse valor também já foi depositado
+
+
+@dataclass
+class DadosLiquidacao:
+    data_ajuizamento: date
+    data_liquidacao: date  # data até a qual os valores são atualizados
+    rescisao: DadosRescisao | None = None  # verbas rescisórias deferidas
+    verbas_rescisorias: frozenset[VerbaRescisoria] = frozenset(VerbaRescisoria)
+    pedidos: DadosPedidos | None = None  # horas extras e adicionais deferidos
+    valores_pagos: list[ValorPago] = field(default_factory=list)
+    juros_pre_judiciais: bool = True
+    # INSS
+    considerar_salario_pago: bool = True  # o salário já pago no mês entra nas faixas e no teto
+    simples_nacional: bool = False  # empresa do Simples: sem cota patronal (exceto anexo IV)
+    aliquota_rat: Decimal = Decimal("0.02")  # RAT ajustado pelo FAP
+    aliquota_terceiros: Decimal = Decimal("0.058")
+    # Honorários e custas
+    honorarios_percentual: Decimal = ZERO  # devidos pela reclamada (art. 791-A, CLT)
+    honorarios_reclamante_base: Decimal = ZERO  # valor dos pedidos rejeitados
+    honorarios_reclamante_percentual: Decimal = ZERO
+    justica_gratuita: bool = False  # suspende a exigibilidade dos honorários do reclamante (ADI 5766)
+    custas_informadas: Decimal | None = None  # None = 2% sobre a condenação (art. 789, CLT)

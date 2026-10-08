@@ -9,16 +9,21 @@ from decimal import Decimal
 import streamlit as st
 
 from tolaris.dinheiro import arredondar
-from tolaris.interface.caso import CAMPOS
+from tolaris.interface.caso import CAMPOS, TABELAS
 from tolaris.motor.atualizacao import ParametrosAtualizacao
 from tolaris.motor.modelos import (
     AVISOS_PERMITIDOS,
     AdicionalOcupacional,
     AlteracaoSalarial,
+    DadosLiquidacao,
     DadosPedidos,
     DadosRescisao,
+    DsrNosReflexos,
     Modalidade,
+    NaturezaPagamento,
     PeriodoJornada,
+    ValorPago,
+    VerbaRescisoria,
 )
 
 DATA_MINIMA = date(1960, 1, 1)  # o cálculo avisa quando faltar tabela para o período
@@ -46,6 +51,39 @@ PADROES = {
     "considerar_prescricao": True,
     "atualizar": True,
     "juros_pre_judiciais": True,
+    "dsr_nos_reflexos": DsrNosReflexos.OJ_394_ATUAL,
+    "informar_base_insalubridade": False,
+    "base_insalubridade": 0.0,
+    # liquidação
+    "liq_rescisorias": False,
+    "liq_verbas_rescisorias": list(VerbaRescisoria),
+    "liq_pedidos": True,
+    "considerar_salario_pago": True,
+    "simples_nacional": False,
+    "aliquota_rat": 2.0,
+    "aliquota_terceiros": 5.8,
+    "honorarios_percentual": 10.0,
+    "sucumbencia_reclamante": False,
+    "honorarios_reclamante_base": 0.0,
+    "honorarios_reclamante_percentual": 10.0,
+    "justica_gratuita": True,
+    "custas_fixadas": False,
+    "custas_valor": 0.0,
+}
+COLUNAS_PAGO = {
+    "descricao": "Descrição",
+    "competencia": "Competência (mês)",
+    "valor": "Valor (R$)",
+    "natureza": "Natureza",
+    "fgts": "FGTS já depositado",
+}
+NATUREZAS = {n.rotulo: n for n in NaturezaPagamento}
+LINHA_PAGO_VAZIA = {
+    COLUNAS_PAGO["descricao"]: "",
+    COLUNAS_PAGO["competencia"]: None,
+    COLUNAS_PAGO["valor"]: 0.0,
+    COLUNAS_PAGO["natureza"]: NaturezaPagamento.SALARIAL.rotulo,
+    COLUNAS_PAGO["fgts"]: False,
 }
 COLUNAS_PERIODO = {
     "inicio": "Início (vazio = admissão)",
@@ -78,7 +116,7 @@ def iniciar_estado():
     st.session_state.setdefault("data_ajuizamento", date.today())
     st.session_state.setdefault("data_atualizacao", date.today())
     st.session_state.setdefault("data_interrupcao", None)
-    for tabela in ("historico", "periodos"):
+    for tabela in TABELAS:
         st.session_state.setdefault(f"{tabela}_versao", 0)
         st.session_state.setdefault(f"{tabela}_inicial", [])
         st.session_state.setdefault(f"{tabela}_atual", [])
@@ -177,8 +215,14 @@ def pendencias_contrato() -> list[str]:
 
 
 def secoes_rescisao():
+    secao_ferias_e_13("3. Férias, faltas e 13º")
+    secao_fgts_e_multas("4. FGTS, multas e descontos", com_dependentes=True)
+    secao_ajuizamento_e_atualizacao(5, com_prescricao=False)
+
+
+def secao_ferias_e_13(titulo: str):
     with st.container(border=True):
-        st.subheader("3. Férias, faltas e 13º")
+        st.subheader(titulo)
         c1, c2, c3, c4 = st.columns(4)
         c1.number_input(
             "Períodos de férias vencidas não gozadas",
@@ -204,8 +248,10 @@ def secoes_rescisao():
             help="Adiantamento (1ª parcela) já recebido, que será descontado.",
         )
 
+
+def secao_fgts_e_multas(titulo: str, com_dependentes: bool):
     with st.container(border=True):
-        st.subheader("4. FGTS, multas e descontos")
+        st.subheader(titulo)
         c1, c2, c3 = st.columns(3)
         if c1.checkbox("Tenho o saldo do FGTS (extrato)", key="informar_saldo_fgts"):
             c1.number_input(
@@ -225,10 +271,9 @@ def secoes_rescisao():
             key="multa_467",
             help="50% sobre as verbas rescisórias incontroversas não pagas na primeira audiência.",
         )
-        c3.number_input("Dependentes para IR", min_value=0, step=1, key="dependentes_ir")
+        if com_dependentes:
+            c3.number_input("Dependentes para IR", min_value=0, step=1, key="dependentes_ir")
         c3.number_input("Outros descontos (R$)", min_value=0.0, step=50.0, key="outros_descontos")
-
-    secao_ajuizamento_e_atualizacao(5, com_prescricao=False)
 
 
 def dados_rescisao() -> DadosRescisao:
@@ -257,8 +302,14 @@ def dados_rescisao() -> DadosRescisao:
 
 
 def secoes_pedidos():
+    secao_jornada("3. Jornada: horas extras e horas noturnas não pagas")
+    secao_adicional("4. Insalubridade ou periculosidade")
+    secao_ajuizamento_e_atualizacao(5, com_prescricao=True)
+
+
+def secao_jornada(titulo: str):
     with st.container(border=True):
-        st.subheader("3. Jornada: horas extras e horas noturnas não pagas")
+        st.subheader(titulo)
         st.caption(
             "Informe a média mensal de horas devidas e não pagas em cada período. "
             "Ex.: 2 horas extras por dia × 22 dias = 44 h/mês. "
@@ -275,10 +326,18 @@ def secoes_pedidos():
             help="Em regra 100%: trabalho em domingos e feriados sem folga compensatória (Súmula 146 do TST).",
         )
         c4.number_input("Adicional noturno (%)", min_value=0.0, step=5.0, key="adicional_noturno")
-        st.checkbox(
+        c1, c2 = st.columns(2)
+        c1.checkbox(
             "Converter horas noturnas em hora reduzida (52min30s)",
             key="hora_noturna_reduzida",
             help="Art. 73, § 1º, CLT: cada 52min30s de trabalho noturno contam como 1 hora.",
+        )
+        c2.selectbox(
+            "DSR majorado nos reflexos (13º, férias e aviso)",
+            list(DsrNosReflexos),
+            format_func=lambda o: o.rotulo,
+            key="dsr_nos_reflexos",
+            help="OJ 394 da SDI-1 do TST. Use outra opção só se a sentença fixou critério diferente.",
         )
         _tabela(
             "periodos",
@@ -292,8 +351,10 @@ def secoes_pedidos():
             },
         )
 
+
+def secao_adicional(titulo: str):
     with st.container(border=True):
-        st.subheader("4. Insalubridade ou periculosidade")
+        st.subheader(titulo)
         c1, c2 = st.columns(2)
         tipo = c1.selectbox(
             "Adicional",
@@ -314,25 +375,33 @@ def secoes_pedidos():
                     "Adicional devido desde", format="DD/MM/YYYY", key="adicional_inicio", min_value=DATA_MINIMA
                 )
                 c4.date_input("Adicional devido até", format="DD/MM/YYYY", key="adicional_fim", min_value=DATA_MINIMA)
+            if tipo.insalubridade and c1.checkbox(
+                "Base diferente do salário mínimo",
+                key="informar_base_insalubridade",
+                help="Base fixada na sentença ou em norma coletiva (ex.: piso da categoria).",
+            ):
+                c1.number_input(
+                    "Base mensal da insalubridade (R$)", min_value=0.0, step=100.0, key="base_insalubridade"
+                )
 
-    secao_ajuizamento_e_atualizacao(5, com_prescricao=True)
 
-
-def secao_ajuizamento_e_atualizacao(numero: int, com_prescricao: bool):
+def secao_ajuizamento_e_atualizacao(numero: int, com_prescricao: bool, liquidacao: bool = False):
     titulo = "Ajuizamento, prescrição e atualização" if com_prescricao else "Ajuizamento e atualização"
     with st.container(border=True):
         st.subheader(f"{numero}. {titulo}")
         c1, c2, c3 = st.columns(3)
         c1.date_input(
-            "Data do ajuizamento (ou prevista)",
+            "Data do ajuizamento" if liquidacao else "Data do ajuizamento (ou prevista)",
             format="DD/MM/YYYY",
             key="data_ajuizamento",
             min_value=DATA_MINIMA,
-            help="Para a petição inicial, use a data prevista de distribuição: todo o período será "
+            help="Início da fase judicial (SELIC até 29/08/2024)."
+            if liquidacao
+            else "Para a petição inicial, use a data prevista de distribuição: todo o período será "
             "tratado como fase pré-judicial.",
         )
         if com_prescricao and c1.checkbox(
-            "Aplicar prescrição quinquenal",
+            "A sentença aplicou a prescrição quinquenal" if liquidacao else "Aplicar prescrição quinquenal",
             key="considerar_prescricao",
             help="Exclui as parcelas anteriores a 5 anos da data do ajuizamento (art. 7º, XXIX, CF).",
         ):
@@ -348,12 +417,21 @@ def secao_ajuizamento_e_atualizacao(numero: int, com_prescricao: bool):
                     key="data_interrupcao",
                     min_value=DATA_MINIMA,
                 )
-        if c2.checkbox(
+        if liquidacao:
+            c2.date_input(
+                "Data da liquidação (atualizar até)",
+                format="DD/MM/YYYY",
+                key="data_atualizacao",
+                min_value=DATA_MINIMA,
+                help="Correção e juros pela ADC 58 do STF e pela Lei nº 14.905/2024, conforme a SDI-1 do TST.",
+            )
+        if liquidacao or c2.checkbox(
             "Atualizar valores (correção e juros)",
             key="atualizar",
             help="ADC 58 do STF e Lei nº 14.905/2024, conforme a SDI-1 do TST.",
         ):
-            c2.date_input("Atualizar até", format="DD/MM/YYYY", key="data_atualizacao", min_value=DATA_MINIMA)
+            if not liquidacao:
+                c2.date_input("Atualizar até", format="DD/MM/YYYY", key="data_atualizacao", min_value=DATA_MINIMA)
             c3.checkbox(
                 "Juros antes do ajuizamento",
                 key="juros_pre_judiciais",
@@ -416,4 +494,159 @@ def dados_pedidos() -> DadosPedidos:
         adicional_inicio=None if todo_contrato else e.get("adicional_inicio"),
         adicional_fim=None if todo_contrato else e.get("adicional_fim"),
         adicional_ja_pago=bool(e.get("adicional_ja_pago")) and tipo != AdicionalOcupacional.NENHUM,
+        base_insalubridade=(
+            dec(e["base_insalubridade"])
+            if tipo.insalubridade and e.get("informar_base_insalubridade") and e.get("base_insalubridade")
+            else None
+        ),
+        dsr_nos_reflexos=e.get("dsr_nos_reflexos", DsrNosReflexos.OJ_394_ATUAL),
+    )
+
+
+# ---------------------------------------------------------------- liquidação de sentença
+
+
+def secoes_liquidacao():
+    e = st.session_state
+    with st.container(border=True):
+        st.subheader("3. Verbas deferidas na sentença")
+        c1, c2 = st.columns(2)
+        c1.checkbox("Verbas rescisórias", key="liq_rescisorias")
+        c2.checkbox("Horas extras, adicional noturno, insalubridade ou periculosidade", key="liq_pedidos")
+        if e.get("liq_rescisorias"):
+            c1.multiselect(
+                "Quais verbas rescisórias?",
+                list(VerbaRescisoria),
+                format_func=lambda v: v.rotulo,
+                key="liq_verbas_rescisorias",
+            )
+    if e.get("liq_rescisorias"):
+        secao_ferias_e_13("Verbas rescisórias: férias, faltas e 13º")
+        secao_fgts_e_multas("Verbas rescisórias: FGTS, multas e descontos", com_dependentes=False)
+    if e.get("liq_pedidos"):
+        secao_jornada("Jornada: horas extras e horas noturnas não pagas")
+        secao_adicional("Insalubridade ou periculosidade")
+
+    with st.container(border=True):
+        st.subheader("4. Valores já pagos (dedução)")
+        st.caption(
+            "Valores pagos sob o mesmo título, a deduzir pelo critério global (OJ 415 da SDI-1 do TST). "
+            "Deixe em branco se não houver."
+        )
+        _tabela(
+            "pagos",
+            [dict(LINHA_PAGO_VAZIA)],
+            {
+                COLUNAS_PAGO["descricao"]: st.column_config.TextColumn(),
+                COLUNAS_PAGO["competencia"]: st.column_config.DateColumn(format="MM/YYYY"),
+                COLUNAS_PAGO["valor"]: st.column_config.NumberColumn(min_value=0.0, format="R$ %.2f"),
+                COLUNAS_PAGO["natureza"]: st.column_config.SelectboxColumn(options=list(NATUREZAS)),
+                COLUNAS_PAGO["fgts"]: st.column_config.CheckboxColumn(
+                    help="Marque se o FGTS desse valor já foi depositado: o sistema deduz também 8% e a multa."
+                ),
+            },
+        )
+
+    secao_ajuizamento_e_atualizacao(5, com_prescricao=bool(e.get("liq_pedidos")), liquidacao=True)
+
+    with st.container(border=True):
+        st.subheader("6. INSS, imposto de renda, honorários e custas")
+        c1, c2, c3 = st.columns(3)
+        c1.checkbox(
+            "Somar o salário já pago (faixas e teto do INSS)",
+            key="considerar_salario_pago",
+            help="INSS devido = INSS(salário pago + verbas deferidas) − INSS(salário pago), em cada competência.",
+        )
+        if not c1.checkbox("Empresa do Simples Nacional", key="simples_nacional", help="Sem cota patronal."):
+            c1.number_input("RAT ajustado pelo FAP (%)", min_value=0.0, step=0.5, format="%.4f", key="aliquota_rat")
+            c1.number_input("Terceiros (%)", min_value=0.0, step=0.1, format="%.2f", key="aliquota_terceiros")
+        c2.number_input(
+            "Honorários de sucumbência devidos pela reclamada (%)",
+            min_value=0.0,
+            max_value=100.0,
+            step=1.0,
+            key="honorarios_percentual",
+            help="Art. 791-A da CLT (5% a 15%), sobre o valor bruto da liquidação (OJ 348 da SDI-1).",
+        )
+        if c2.checkbox("Houve sucumbência do reclamante", key="sucumbencia_reclamante"):
+            c2.number_input(
+                "Valor dos pedidos rejeitados (R$)", min_value=0.0, step=1000.0, key="honorarios_reclamante_base"
+            )
+            c2.number_input(
+                "Honorários devidos pelo reclamante (%)",
+                min_value=0.0,
+                max_value=100.0,
+                step=1.0,
+                key="honorarios_reclamante_percentual",
+            )
+            c2.checkbox(
+                "Reclamante com justiça gratuita",
+                key="justica_gratuita",
+                help="A exigibilidade fica suspensa (art. 791-A, § 4º, CLT; ADI 5766 do STF).",
+            )
+        if c3.checkbox(
+            "Custas fixadas na sentença",
+            key="custas_fixadas",
+            help="Sem marcar, o sistema calcula 2% sobre a condenação (art. 789, CLT).",
+        ):
+            c3.number_input("Valor das custas (R$)", min_value=0.0, step=10.0, key="custas_valor")
+
+
+def pendencias_liquidacao() -> list[str]:
+    e = st.session_state
+    faltando = []
+    if not e.get("data_ajuizamento"):
+        faltando.append("data do ajuizamento")
+    if not e.get("data_atualizacao"):
+        faltando.append("data da liquidação")
+    if not e.get("liq_rescisorias") and not e.get("liq_pedidos"):
+        faltando.append("verbas deferidas")
+    return faltando
+
+
+def _percentual(valor) -> Decimal:
+    return Decimal(str(valor or 0)) / 100
+
+
+def valores_pagos() -> list[ValorPago]:
+    pagos = []
+    for linha in st.session_state["pagos_atual"]:
+        valor = dec(linha.get(COLUNAS_PAGO["valor"]))
+        competencia = linha.get(COLUNAS_PAGO["competencia"])
+        if not valor or not competencia:
+            continue
+        pagos.append(
+            ValorPago(
+                descricao=linha.get(COLUNAS_PAGO["descricao"]) or "",
+                competencia=competencia,
+                valor=valor,
+                natureza=NATUREZAS.get(linha.get(COLUNAS_PAGO["natureza"]), NaturezaPagamento.SALARIAL),
+                abater_fgts=bool(linha.get(COLUNAS_PAGO["fgts"])),
+            )
+        )
+    return pagos
+
+
+def dados_liquidacao() -> DadosLiquidacao:
+    e = st.session_state
+    sucumbencia = bool(e.get("sucumbencia_reclamante"))
+    return DadosLiquidacao(
+        data_ajuizamento=e["data_ajuizamento"],
+        data_liquidacao=e["data_atualizacao"],
+        rescisao=dados_rescisao() if e.get("liq_rescisorias") else None,
+        verbas_rescisorias=frozenset(e.get("liq_verbas_rescisorias") or ()),
+        pedidos=dados_pedidos() if e.get("liq_pedidos") else None,
+        valores_pagos=valores_pagos(),
+        juros_pre_judiciais=bool(e.get("juros_pre_judiciais")),
+        considerar_salario_pago=bool(e.get("considerar_salario_pago")),
+        simples_nacional=bool(e.get("simples_nacional")),
+        aliquota_rat=_percentual(e.get("aliquota_rat")),
+        aliquota_terceiros=_percentual(e.get("aliquota_terceiros")),
+        honorarios_percentual=_percentual(e.get("honorarios_percentual")),
+        honorarios_reclamante_base=dec(e.get("honorarios_reclamante_base")) if sucumbencia else Decimal(0),
+        honorarios_reclamante_percentual=_percentual(e.get("honorarios_reclamante_percentual"))
+        if sucumbencia
+        else Decimal(0),
+        justica_gratuita=bool(e.get("justica_gratuita")),
+        custas_informadas=dec(e.get("custas_valor")) if e.get("custas_fixadas") else None,
     )

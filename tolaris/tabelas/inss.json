@@ -2,6 +2,136 @@
   "descricao": "Contribuição previdenciária do segurado empregado, doméstico e avulso. Cada tabela vale a partir de 'vigencia' até a vigência da tabela seguinte.",
   "tabelas": [
     {
+      "vigencia": "2008-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MPS/MF nº 501/2007",
+      "faixas": [
+        {"ate": "868.29", "aliquota": "0.08"},
+        {"ate": "1447.14", "aliquota": "0.09"},
+        {"ate": "2894.28", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2008-03-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MPS/MF nº 77/2008",
+      "faixas": [
+        {"ate": "911.70", "aliquota": "0.08"},
+        {"ate": "1519.50", "aliquota": "0.09"},
+        {"ate": "3038.99", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2009-02-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MPS/MF nº 48/2009",
+      "faixas": [
+        {"ate": "965.67", "aliquota": "0.08"},
+        {"ate": "1609.45", "aliquota": "0.09"},
+        {"ate": "3218.90", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2010-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MPS/MF nº 350/2009",
+      "faixas": [
+        {"ate": "1024.97", "aliquota": "0.08"},
+        {"ate": "1708.27", "aliquota": "0.09"},
+        {"ate": "3416.54", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2010-06-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MPS/MF nº 333/2010, com a redação da nº 408/2010 (vigente desde 16/06/2010; a tabela auxiliar do Sefip aplica a partir da competência 06/2010)",
+      "faixas": [
+        {"ate": "1040.22", "aliquota": "0.08"},
+        {"ate": "1733.70", "aliquota": "0.09"},
+        {"ate": "3467.40", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2011-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MPS/MF nº 407/2011 (vale desde a competência 01/2011, art. 7º; substituiu a nº 568/2010)",
+      "faixas": [
+        {"ate": "1107.52", "aliquota": "0.08"},
+        {"ate": "1845.87", "aliquota": "0.09"},
+        {"ate": "3691.74", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2012-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MPS/MF nº 2/2012",
+      "faixas": [
+        {"ate": "1174.86", "aliquota": "0.08"},
+        {"ate": "1958.10", "aliquota": "0.09"},
+        {"ate": "3916.20", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2013-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MPS/MF nº 15/2013",
+      "faixas": [
+        {"ate": "1247.70", "aliquota": "0.08"},
+        {"ate": "2079.50", "aliquota": "0.09"},
+        {"ate": "4159.00", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2014-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MPS/MF nº 19/2014",
+      "faixas": [
+        {"ate": "1317.07", "aliquota": "0.08"},
+        {"ate": "2195.12", "aliquota": "0.09"},
+        {"ate": "4390.24", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2015-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MPS/MF nº 13/2015",
+      "faixas": [
+        {"ate": "1399.12", "aliquota": "0.08"},
+        {"ate": "2331.88", "aliquota": "0.09"},
+        {"ate": "4663.75", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2016-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria Interministerial MTPS/MF nº 1/2016",
+      "faixas": [
+        {"ate": "1556.94", "aliquota": "0.08"},
+        {"ate": "2594.92", "aliquota": "0.09"},
+        {"ate": "5189.82", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2017-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria MF nº 8/2017",
+      "faixas": [
+        {"ate": "1659.38", "aliquota": "0.08"},
+        {"ate": "2765.66", "aliquota": "0.09"},
+        {"ate": "5531.31", "aliquota": "0.11"}
+      ]
+    },
+    {
+      "vigencia": "2018-01-01",
+      "tipo": "aliquota_unica",
+      "fonte": "Portaria MF nº 15/2018",
+      "faixas": [
+        {"ate": "1693.72", "aliquota": "0.08"},
+        {"ate": "2822.90", "aliquota": "0.09"},
+        {"ate": "5645.80", "aliquota": "0.11"}
+      ]
+    },
+    {
       "vigencia": "2019-01-01",
       "tipo": "aliquota_unica",
       "fonte": "Portaria ME nº 9/2019",

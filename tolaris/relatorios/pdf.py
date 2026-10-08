@@ -7,6 +7,7 @@ from fpdf.enums import XPos, YPos
 
 from tolaris.dinheiro import formatar_brl
 from tolaris.motor.atualizacao import ResultadoAtualizacao
+from tolaris.motor.liquidacao import ResultadoLiquidacao
 from tolaris.motor.modelos import Grupo, ResultadoCalculo
 from tolaris.relatorios.mensal import colunas_ativas, formatar
 
@@ -125,6 +126,80 @@ def _atualizacao(pdf: FPDF, atualizado: ResultadoAtualizacao, numero: int) -> in
     return numero + 1
 
 
+def _liquidacao(pdf: FPDF, r: ResultadoLiquidacao, numero: int) -> int:
+    _secao(pdf, f"{numero}. Resumo da liquidação")
+    secao_atual = None
+    for secao, rotulo, valor, destaque in r.quadro:
+        if secao != secao_atual:
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(*AZUL)
+            pdf.cell(0, 7, _texto(secao), **NOVA_LINHA)
+            pdf.set_text_color(0, 0, 0)
+            secao_atual = secao
+        _linha_valor(pdf, rotulo.upper() if destaque else rotulo, valor, negrito=destaque, preenchido=destaque)
+
+    _secao(pdf, f"{numero + 1}. Contribuição previdenciária (INSS)")
+    pdf.set_font("Helvetica", "", 8.5)
+    pdf.multi_cell(
+        0,
+        4.5,
+        _texto(
+            "Regime de competência (Súmula 368, IV e V, do TST): tabela de cada mês; 13º em separado. A cota do "
+            "reclamante é descontada do crédito pelo valor histórico; os acréscimos ficam com a reclamada."
+        ),
+        **NOVA_LINHA,
+    )
+    larguras = (24, 28, 28, 28, 28, 25, 29)
+    titulos = (
+        "Competência",
+        "Verbas deferidas",
+        "Salário pago",
+        "Cota reclamante",
+        "Cota reclamada",
+        "Acréscimos",
+        "Critério",
+    )
+    pdf.set_font("Helvetica", "B", 7.5)
+    pdf.set_fill_color(*AZUL)
+    pdf.set_text_color(255, 255, 255)
+    for largura, titulo in zip(larguras, titulos, strict=True):
+        pdf.cell(largura, 6, _texto(titulo), border=1, align="C", fill=True)
+    pdf.ln()
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font("Helvetica", "", 7.5)
+    for linha in r.inss:
+        celulas = (
+            f"{linha.competencia:%m/%Y}" + (" (13º)" if linha.decimo_terceiro else ""),
+            formatar_brl(linha.base_devida),
+            formatar_brl(linha.base_paga),
+            formatar_brl(linha.segurado),
+            formatar_brl(linha.empresa),
+            formatar_brl(linha.acrescimos),
+            linha.criterio.split(" (")[0],
+        )
+        for indice, (largura, texto) in enumerate(zip(larguras, celulas, strict=True)):
+            pdf.cell(largura, 5, _texto(texto), border=1, align="C" if indice in (0, 6) else "R")
+        pdf.ln()
+    pdf.ln(2)
+    _linha_valor(pdf, "Cota do reclamante", r.inss_segurado)
+    _linha_valor(pdf, "Cota da reclamada (empresa, RAT e terceiros)", r.inss_empresa)
+    _linha_valor(pdf, "Acréscimos (juros SELIC ou atualização)", r.inss_acrescimos)
+
+    _secao(pdf, f"{numero + 2}. Imposto de renda")
+    pdf.set_font("Helvetica", "", 8.5)
+    pdf.multi_cell(
+        0,
+        4.5,
+        _texto(
+            "Rendimentos recebidos acumuladamente (art. 12-A da Lei nº 7.713/1988; Súmula 368, VI, do TST). "
+            + r.irrf.memoria
+        ),
+        **NOVA_LINHA,
+    )
+    _linha_valor(pdf, "Imposto de renda retido", r.irrf.valor, negrito=True)
+    return numero + 3
+
+
 def gerar_pdf(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | None = None) -> bytes:
     pdf = _Documento()
     pdf.set_auto_page_break(auto=True, margin=20)
@@ -163,8 +238,12 @@ def gerar_pdf(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | No
         _linha_valor(pdf, rotulo.upper() if destaque else rotulo, valor, negrito=True, preenchido=destaque)
 
     numero = _demonstrativo_mensal(pdf, resultado, 3)
+    if isinstance(resultado, ResultadoLiquidacao):
+        atualizado = atualizado or resultado.atualizado
     if atualizado:
         numero = _atualizacao(pdf, atualizado, numero)
+    if isinstance(resultado, ResultadoLiquidacao):
+        numero = _liquidacao(pdf, resultado, numero)
 
     _secao(pdf, f"{numero}. Memória de cálculo")
     for item in resultado.lancamentos:

@@ -2,6 +2,7 @@
 
 import calendar
 from datetime import date, timedelta
+from decimal import Decimal
 
 UM_DIA = timedelta(days=1)
 
@@ -63,6 +64,15 @@ def avos_no_ano(inicio: date, fim: date, ano: int, minimo_dias: int = 15) -> int
         if dias >= minimo_dias:
             avos += 1
     return avos
+
+
+def fracao_do_mes(inicio: date, fim: date) -> Decimal:
+    """Parte do mês entre `inicio` e `fim` (mesmo mês): mês completo = 1; senão dias ÷ 30."""
+    if fim < inicio:
+        return Decimal(0)
+    if inicio.day == 1 and fim == ultimo_dia_do_mes(fim.year, fim.month):
+        return Decimal(1)
+    return min(Decimal(dias_corridos(inicio, fim)) / 30, Decimal(1))
 
 
 def primeiro_dia_do_mes(d: date) -> date:

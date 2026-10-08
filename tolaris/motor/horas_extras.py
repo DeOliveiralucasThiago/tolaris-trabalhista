@@ -12,6 +12,7 @@ from tolaris.datas import (
     dias_corridos,
     dias_uteis_e_repousos,
     formatar_data,
+    fracao_do_mes,
     meses_entre,
     primeiro_dia_do_mes,
     somar_meses,
@@ -31,6 +32,7 @@ from tolaris.motor.modelos import (
     AVISOS_PERMITIDOS,
     AdicionalOcupacional,
     DadosPedidos,
+    DsrNosReflexos,
     ErroDeEntrada,
     Grupo,
     Lancamento,
@@ -123,7 +125,9 @@ def _validar(d: DadosPedidos) -> None:
         elif base < d.admissao:
             erros.append("A data de ajuizamento (ou da interrupção) não pode ser anterior à admissão.")
 
-    if d.adicional_ocupacional.insalubridade and d.desligamento >= d.admissao:
+    if d.base_insalubridade is not None and d.base_insalubridade <= 0:
+        erros.append("A base da insalubridade deve ser positiva.")
+    if d.adicional_ocupacional.insalubridade and d.base_insalubridade is None and d.desligamento >= d.admissao:
         primeira = min(t.vigencia for t in tabelas_salario_minimo())
         inicio = max(d.admissao, d.adicional_inicio or d.admissao)
         if data_base_prescricao(d):
@@ -135,15 +139,6 @@ def _validar(d: DadosPedidos) -> None:
             )
     if erros:
         raise ErroDeEntrada(erros)
-
-
-def _fracao(inicio: date, fim: date) -> Decimal:
-    """Parte do mês entre `inicio` e `fim` (mesmo mês): mês completo = 1; senão dias ÷ 30."""
-    if fim < inicio:
-        return ZERO
-    if inicio.day == 1 and fim == ultimo_dia_do_mes(fim.year, fim.month):
-        return UM
-    return min(Decimal(dias_corridos(inicio, fim)) / 30, UM)
 
 
 def _sobreposicao(a_inicio: date, a_fim: date, b_inicio: date, b_fim: date) -> tuple[date, date] | None:
@@ -198,13 +193,22 @@ class _Calculo:
 
     # ------------------------------------------------------------------ bases
 
+    def _dsr_nos_reflexos(self, competencia: date) -> bool:
+        criterio = self.d.dsr_nos_reflexos
+        if criterio == DsrNosReflexos.SEMPRE:
+            return True
+        if criterio == DsrNosReflexos.NUNCA:
+            return False
+        return competencia >= INICIO_DSR_NOS_REFLEXOS
+
     def _adicional_cheio(self, data: date) -> Decimal:
         """Valor mensal integral do adicional ocupacional vigente em `data` (zero se inativo)."""
         tipo = self.d.adicional_ocupacional
         if tipo == AdicionalOcupacional.NENHUM or not (self.adicional_inicio <= data <= self.adicional_fim):
             return ZERO
         if tipo.insalubridade:
-            return tipo.percentual * salario_minimo_vigente(data).valor
+            base = self.d.base_insalubridade or salario_minimo_vigente(data).valor
+            return tipo.percentual * base
         return tipo.percentual * salario_em(self.d.historico_salarial, self.d.salario, data)
 
     def _valor_hora(self, data: date) -> Decimal:
@@ -217,14 +221,14 @@ class _Calculo:
         for periodo in self.d.periodos:
             intervalo = _sobreposicao(inicio, fim, periodo.inicio, periodo.fim)
             if intervalo:
-                total += getattr(periodo, atributo) * _fracao(*intervalo)
+                total += getattr(periodo, atributo) * fracao_do_mes(*intervalo)
         return total
 
     def _meses_de_adicional(self, inicio: date, fim: date) -> Decimal:
         if self.d.adicional_ocupacional == AdicionalOcupacional.NENHUM or self.d.adicional_ja_pago:
             return ZERO
         intervalo = _sobreposicao(inicio, fim, self.adicional_inicio, self.adicional_fim)
-        return _fracao(*intervalo) if intervalo else ZERO
+        return fracao_do_mes(*intervalo) if intervalo else ZERO
 
     # ------------------------------------------------------------------ mês a mês
 
@@ -253,19 +257,19 @@ class _Calculo:
                     competencia,
                     inicio,
                     fim,
-                    _fracao(inicio, fim),
+                    fracao_do_mes(inicio, fim),
                     h1,
                     h2,
                     hn,
                     meses_adicional,
                     razao,
-                    competencia >= INICIO_DSR_NOS_REFLEXOS,
+                    self._dsr_nos_reflexos(competencia),
                 )
             )
             self.mensal.append(
                 LinhaMensal(
                     competencia=competencia,
-                    fracao=_fracao(inicio, fim),
+                    fracao=fracao_do_mes(inicio, fim),
                     salario=salario_em(d.historico_salarial, d.salario, fim),
                     adicional_ocupacional=arredondar(adicional_cheio),
                     valor_hora=valor_hora,
@@ -300,7 +304,7 @@ class _Calculo:
         for competencia in meses_entre(inicio_projecao, self.data_projetada):
             inicio = max(competencia, inicio_projecao)
             fim = min(ultimo_dia_do_mes(competencia.year, competencia.month), self.data_projetada)
-            fracao = _fracao(inicio, fim)
+            fracao = fracao_do_mes(inicio, fim)
             uteis, repousos = dias_uteis_e_repousos(competencia.year, competencia.month)
             self.meses.append(
                 _Mes(
@@ -313,7 +317,7 @@ class _Calculo:
                     media["hn"] * fracao,
                     self._meses_de_adicional(inicio, fim),
                     Decimal(repousos) / Decimal(uteis),
-                    competencia >= INICIO_DSR_NOS_REFLEXOS,
+                    self._dsr_nos_reflexos(competencia),
                     projetado=True,
                 )
             )
@@ -573,7 +577,11 @@ class _Calculo:
         if d.divisor == 200:
             divisor += " (Súmula 431 do TST)"
         reflexos_he = "Súmula 347 do TST (média física × valor-hora da época)."
-        reflexos_he += " DSR integra os reflexos a partir de 04/2023: OJ 394 da SDI-1 (IRR de 2023)."
+        reflexos_he += {
+            DsrNosReflexos.OJ_394_ATUAL: " DSR integra os reflexos a partir de 04/2023: OJ 394 da SDI-1 (IRR de 2023).",
+            DsrNosReflexos.NUNCA: " DSR não integra os reflexos (redação anterior da OJ 394, conforme a sentença).",
+            DsrNosReflexos.SEMPRE: " DSR integra os reflexos em todo o período (conforme a sentença).",
+        }[d.dsr_nos_reflexos]
 
         self._pedido(
             _Pedido(
@@ -618,7 +626,11 @@ class _Calculo:
         if tipo != AdicionalOcupacional.NENHUM and not d.adicional_ja_pago:
             if tipo.insalubridade:
                 nome = "Adicional de insalubridade"
-                fundamento = "Art. 192, CLT; base no salário mínimo (Súmula Vinculante 4 do STF)."
+                fundamento = (
+                    f"Art. 192, CLT; base de {formatar_brl(d.base_insalubridade)} (sentença ou norma coletiva)."
+                    if d.base_insalubridade
+                    else "Art. 192, CLT; base no salário mínimo (Súmula Vinculante 4 do STF)."
+                )
             else:
                 nome = "Adicional de periculosidade"
                 fundamento = "Art. 193, § 1º, CLT; Súmula 191 do TST (sobre o salário-base)."
@@ -677,7 +689,7 @@ class _Calculo:
                     f"O período {i} de jornada ultrapassa o contrato; foi considerado só entre "
                     f"{formatar_data(d.admissao)} e {formatar_data(d.desligamento)}."
                 )
-        if d.adicional_ocupacional.insalubridade:
+        if d.adicional_ocupacional.insalubridade and not d.base_insalubridade:
             ultima = max(t.vigencia for t in tabelas_salario_minimo())
             if self.data_projetada.year > ultima.year:
                 self.alertas.append(f"A tabela de salário mínimo vai até {ultima.year}; confira se há valor novo.")
@@ -708,6 +720,10 @@ class _Calculo:
             resumo["Insalubridade/periculosidade"] = d.adicional_ocupacional.rotulo + (
                 " (já pago: só integra a base das horas extras)" if d.adicional_ja_pago else ""
             )
+            if d.adicional_ocupacional.insalubridade and d.base_insalubridade:
+                resumo["Base da insalubridade"] = formatar_brl(d.base_insalubridade)
+        if d.dsr_nos_reflexos != DsrNosReflexos.OJ_394_ATUAL:
+            resumo["DSR nos reflexos"] = d.dsr_nos_reflexos.rotulo
         if self.dias_aviso_indenizados:
             resumo["Aviso indenizado"] = (
                 f"{self.dias_aviso_indenizados} dias, projeção até {formatar_data(self.data_projetada)}"

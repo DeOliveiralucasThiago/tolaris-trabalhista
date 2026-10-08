@@ -74,3 +74,32 @@ def test_campos_de_data_aceitam_datas_antigas():
     assert {"admissao", "desligamento", "data_ajuizamento", "data_interrupcao", "adicional_inicio"} <= chaves
     for campo in app.date_input:
         assert campo.proto.min <= "1960-01-01", (campo.key, campo.proto.min)
+
+
+def test_app_calcula_liquidacao():
+    app = AppTest.from_file(APP, default_timeout=30)
+    app.session_state["periodos_inicial"] = [
+        {
+            "Início (vazio = admissão)": None,
+            "Fim (vazio = desligamento)": None,
+            "HE 1º adicional (h/mês)": 20.0,
+            "HE 2º adicional (h/mês)": 0.0,
+            "Horas noturnas (h/mês)": 0.0,
+        }
+    ]
+    app.run()
+    app.radio(key="modo").set_value("Liquidação de sentença").run()
+    app.date_input(key="admissao").set_value(date(2022, 1, 1))
+    app.date_input(key="desligamento").set_value(date(2022, 3, 31))
+    app.number_input(key="salario").set_value(2200.0)
+    app.date_input(key="data_ajuizamento").set_value(date(2022, 6, 1))
+    app.date_input(key="data_atualizacao").set_value(date(2023, 3, 10))
+    app.checkbox(key="considerar_prescricao").uncheck()
+    app.checkbox(key="liq_rescisorias").check()
+    app.run()
+    assert not app.exception
+    assert not app.error, [e.value for e in app.error]
+    metricas = {m.label: m.value for m in app.metric}
+    assert set(metricas) == {"Líquido do reclamante", "FGTS a depositar", "INSS e IR", "Total devido pela reclamada"}
+    abas = {aba.label for aba in app.tabs}
+    assert {"Resumo da liquidação", "INSS", "Imposto de renda", "Atualização"} <= abas

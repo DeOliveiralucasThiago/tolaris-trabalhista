@@ -46,7 +46,7 @@ branco valem para o contrato inteiro; trechos fora do contrato são descartados 
 |---|---|---|
 | Horas extras | horas × valor-hora × (1 + adicional) | Art. 7º, XVI, CF; art. 59 CLT |
 | Adicional noturno | horas noturnas × (60 ÷ 52,5, se hora reduzida) × valor-hora × 20% | Art. 73 CLT |
-| Insalubridade | grau (10/20/40%) × salário mínimo vigente no mês × fração | Art. 192 CLT; SV 4 do STF |
+| Insalubridade | grau (10/20/40%) × salário mínimo vigente no mês (ou base fixada na sentença/norma coletiva) × fração | Art. 192 CLT; SV 4 do STF |
 | Periculosidade | 30% × salário do mês × fração | Art. 193, § 1º, CLT; Súmula 191 do TST |
 
 Os adicionais de insalubridade e periculosidade não se acumulam (art. 193, § 2º, CLT): o
@@ -74,6 +74,8 @@ pagamento**:
 extras trabalhadas em 20/03/2023, as horas de DSR também entram no 13º, nas férias e no aviso.
 Antes disso, não entram (para evitar o *bis in idem* da redação antiga).
 *Simplificação:* o sistema aplica a regra nova a partir da competência **abril/2023**.
+Se a sentença fixou outro critério, o formulário permite escolher "não repercute" (redação
+anterior) ou "repercute em todo o período".
 
 **Projeção do aviso indenizado** (art. 487, § 1º, CLT): os meses projetados entram no 13º e nas
 férias com a média de horas dos últimos 12 meses.

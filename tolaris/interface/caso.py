@@ -7,10 +7,20 @@ import json
 from datetime import date
 from enum import Enum
 
-from tolaris.motor.modelos import AdicionalOcupacional, Aviso, Modalidade
+from tolaris.motor.modelos import (
+    AdicionalOcupacional,
+    Aviso,
+    DsrNosReflexos,
+    Modalidade,
+    NaturezaPagamento,
+    VerbaRescisoria,
+)
 
 VERSAO = 2
-ENUMS = {cls.__name__: cls for cls in (Modalidade, Aviso, AdicionalOcupacional)}
+ENUMS = {
+    cls.__name__: cls
+    for cls in (Modalidade, Aviso, AdicionalOcupacional, DsrNosReflexos, VerbaRescisoria, NaturezaPagamento)
+}
 
 # Campos do formulário salvos no caso (chaves do st.session_state)
 CAMPOS = (
@@ -44,6 +54,9 @@ CAMPOS = (
     "adicional_inicio",
     "adicional_fim",
     "adicional_ja_pago",
+    "informar_base_insalubridade",
+    "base_insalubridade",
+    "dsr_nos_reflexos",
     "considerar_prescricao",
     "data_ajuizamento",
     "prescricao_interrompida",
@@ -52,8 +65,23 @@ CAMPOS = (
     "atualizar",
     "data_atualizacao",
     "juros_pre_judiciais",
+    # liquidação
+    "liq_rescisorias",
+    "liq_verbas_rescisorias",
+    "liq_pedidos",
+    "considerar_salario_pago",
+    "simples_nacional",
+    "aliquota_rat",
+    "aliquota_terceiros",
+    "honorarios_percentual",
+    "sucumbencia_reclamante",
+    "honorarios_reclamante_base",
+    "honorarios_reclamante_percentual",
+    "justica_gratuita",
+    "custas_fixadas",
+    "custas_valor",
 )
-TABELAS = ("historico", "periodos")
+TABELAS = ("historico", "periodos", "pagos")
 
 
 def _codificar(valor):

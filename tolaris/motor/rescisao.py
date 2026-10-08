@@ -56,12 +56,13 @@ def dias_de_ferias_por_faltas(faltas: int) -> int:
     return 0
 
 
-def calcular_rescisao(dados: DadosRescisao) -> ResultadoRescisao:
-    _validar(dados)
-    return _Calculo(dados).executar()
+def calcular_rescisao(dados: DadosRescisao, com_tributos: bool = True) -> ResultadoRescisao:
+    """`com_tributos=False` omite INSS e IRRF (a liquidação de sentença os apura por outras regras)."""
+    _validar(dados, com_tributos)
+    return _Calculo(dados, com_tributos).executar()
 
 
-def _validar(d: DadosRescisao) -> None:
+def _validar(d: DadosRescisao, com_tributos: bool = True) -> None:
     erros = []
     if d.desligamento < d.admissao:
         erros.append("A data de desligamento não pode ser anterior à admissão.")
@@ -98,8 +99,9 @@ def _validar(d: DadosRescisao) -> None:
         if alteracao.salario <= 0:
             erros.append(f"Salário do histórico a partir de {formatar_data(alteracao.inicio)} deve ser positivo.")
     try:
-        inss_vigente(d.desligamento)
-        irrf_vigente(d.desligamento)
+        if com_tributos:
+            inss_vigente(d.desligamento)
+            irrf_vigente(d.desligamento)
     except TabelaIndisponivel as erro:
         erros.append(str(erro))
     if erros:
@@ -107,8 +109,9 @@ def _validar(d: DadosRescisao) -> None:
 
 
 class _Calculo:
-    def __init__(self, dados: DadosRescisao):
+    def __init__(self, dados: DadosRescisao, com_tributos: bool = True):
         self.d = dados
+        self.com_tributos = com_tributos
         self.lancamentos: list[Lancamento] = []
         self.alertas: list[str] = []
         self.remuneracao = arredondar(dados.salario + dados.media_variaveis)
@@ -146,7 +149,7 @@ class _Calculo:
         self._multa_467()
         self._descontos()
 
-        alerta_tabela = aviso_tabela_desatualizada(self.d.desligamento)
+        alerta_tabela = aviso_tabela_desatualizada(self.d.desligamento) if self.com_tributos else None
         if alerta_tabela:
             self.alertas.append(alerta_tabela)
         return ResultadoRescisao(
@@ -424,19 +427,8 @@ class _Calculo:
             "Art. 467, CLT (verbas rescisórias incontroversas não pagas na primeira audiência).",
         )
 
-    def _descontos(self):
+    def _tributos(self):
         d = self.d
-        if d.modalidade == Modalidade.PEDIDO_DEMISSAO and d.aviso == Aviso.NAO_CUMPRIDO:
-            self._lancar(
-                "desconto_aviso",
-                "Aviso prévio não cumprido pelo empregado (30 dias)",
-                Grupo.DESCONTO,
-                d.salario,
-                "Dedução",
-                f"{formatar_brl(d.salario)} ÷ 30 × 30 dias",
-                "Art. 487, § 2º, CLT.",
-            )
-
         inss_mensal = calcular_inss(self.saldo_salario, d.desligamento)
         self._lancar(
             "inss_mensal",
@@ -480,6 +472,22 @@ class _Calculo:
             irrf_13.memoria,
             "Lei nº 7.713/1988, art. 26 (tributação exclusiva do 13º).",
         )
+
+    def _descontos(self):
+        d = self.d
+        if d.modalidade == Modalidade.PEDIDO_DEMISSAO and d.aviso == Aviso.NAO_CUMPRIDO:
+            self._lancar(
+                "desconto_aviso",
+                "Aviso prévio não cumprido pelo empregado (30 dias)",
+                Grupo.DESCONTO,
+                d.salario,
+                "Dedução",
+                f"{formatar_brl(d.salario)} ÷ 30 × 30 dias",
+                "Art. 487, § 2º, CLT.",
+            )
+
+        if self.com_tributos:
+            self._tributos()
 
         self._lancar(
             "decimo_terceiro_pago",

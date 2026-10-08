@@ -124,3 +124,48 @@ def calcular_irrf(
 
     partes.append(f"IRRF devido: {formatar_brl(imposto)}. Tabela vigente desde {tabela.vigencia:%d/%m/%Y}.")
     return ResultadoIRRF(imposto, rendimento, base, tabela, " ".join(partes))
+
+
+def calcular_irrf_rra(rendimento, inss, meses: int, data: date) -> ResultadoIRRF:
+    """IR sobre rendimentos recebidos acumuladamente de anos anteriores (art. 12-A da Lei nº 7.713/1988;
+    arts. 36 e 37 da IN RFB nº 1.500/2014): tabela progressiva mensal do mês do recebimento, com os
+    limites das faixas e a parcela a deduzir multiplicados pelo número de meses (NM). Deduções: só a
+    contribuição previdenciária (sem dependentes nem desconto simplificado)."""
+    rendimento = arredondar(rendimento)
+    inss = arredondar(inss)
+    tabela = irrf_vigente(data)
+    if rendimento <= 0:
+        return ResultadoIRRF(ZERO, rendimento, ZERO, tabela, "Sem rendimento tributável de anos anteriores.")
+
+    base = max(rendimento - inss, ZERO)
+    partes = [
+        f"Rendimentos tributáveis de anos anteriores (principal + correção, sem juros): {formatar_brl(rendimento)};",
+        f"número de meses (NM): {meses}; dedução do INSS do reclamante: {formatar_brl(inss)};",
+        f"base {formatar_brl(base)}.",
+    ]
+    faixa = next(f for f in tabela.faixas if f.ate is None or base <= f.ate * meses)
+    imposto = max(arredondar(base * faixa.aliquota - faixa.parcela * meses), ZERO)
+    if faixa.aliquota == 0:
+        partes.append(f"Base na faixa de isenção (até {formatar_brl(faixa.ate * meses)} para {meses} meses).")
+    else:
+        partes.append(
+            f"{formatar_brl(base)} × {formatar_percentual(faixa.aliquota)} − parcela a deduzir "
+            f"{formatar_brl(faixa.parcela)} × {meses} = {formatar_brl(imposto)}."
+        )
+
+    redutor = tabela.redutor
+    if redutor and imposto > 0:
+        if rendimento <= redutor.isencao_ate * meses:
+            reducao = min(imposto, redutor.reducao_maxima * meses)
+        elif rendimento <= redutor.decrescente_ate * meses:
+            reducao = min(imposto, max(arredondar(redutor.constante * meses - redutor.coeficiente * rendimento), ZERO))
+        else:
+            reducao = ZERO
+        if reducao:
+            imposto -= reducao
+            partes.append(
+                f"Redução da Lei nº 15.270/2025, com os limites multiplicados por {meses}: −{formatar_brl(reducao)}."
+            )
+
+    partes.append(f"IR: {formatar_brl(imposto)}. Tabela mensal vigente desde {tabela.vigencia:%d/%m/%Y}.")
+    return ResultadoIRRF(imposto, rendimento, base, tabela, " ".join(partes))

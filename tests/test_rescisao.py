@@ -209,5 +209,5 @@ def test_validacoes():
         calcular_rescisao(dados(modalidade=Modalidade.PEDIDO_DEMISSAO, aviso=Aviso.INDENIZADO))
 
     with pytest.raises(ErroDeEntrada) as erro:
-        calcular_rescisao(dados(admissao=date(2015, 1, 1), desligamento=date(2018, 6, 30)))
+        calcular_rescisao(dados(admissao=date(2005, 1, 1), desligamento=date(2007, 6, 30)))
     assert "Não há tabela" in str(erro.value)
