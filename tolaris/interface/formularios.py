@@ -21,6 +21,8 @@ from tolaris.motor.modelos import (
     DsrNosReflexos,
     Modalidade,
     NaturezaPagamento,
+    OutraVerba,
+    Pagamento,
     PeriodoJornada,
     ValorPago,
     VerbaRescisoria,
@@ -69,6 +71,40 @@ PADROES = {
     "justica_gratuita": True,
     "custas_fixadas": False,
     "custas_valor": 0.0,
+    "informar_prazo_citacao": False,
+    "fim_prazo_citacao": None,
+    "honorarios_periciais": 0.0,
+    "periciais_pelo_reclamante": False,
+    "pensao_percentual": 0.0,
+    "honorarios_contratuais_percentual": 0.0,
+}
+COLUNAS_OUTRA = {
+    "descricao": "Descrição",
+    "competencia": "Competência (mês)",
+    "valor": "Valor (R$)",
+    "natureza": "Natureza",
+    "fgts": "Incide FGTS",
+    "dano_moral": "Danos morais",
+}
+LINHA_OUTRA_VAZIA = {
+    COLUNAS_OUTRA["descricao"]: "",
+    COLUNAS_OUTRA["competencia"]: None,
+    COLUNAS_OUTRA["valor"]: 0.0,
+    COLUNAS_OUTRA["natureza"]: NaturezaPagamento.INDENIZATORIA.rotulo,
+    COLUNAS_OUTRA["fgts"]: False,
+    COLUNAS_OUTRA["dano_moral"]: False,
+}
+COLUNAS_PAGAMENTO = {
+    "descricao": "Descrição",
+    "data": "Data",
+    "valor": "Valor (R$)",
+    "deposito": "Depósito judicial (saldo atual)",
+}
+LINHA_PAGAMENTO_VAZIA = {
+    COLUNAS_PAGAMENTO["descricao"]: "",
+    COLUNAS_PAGAMENTO["data"]: None,
+    COLUNAS_PAGAMENTO["valor"]: 0.0,
+    COLUNAS_PAGAMENTO["deposito"]: False,
 }
 COLUNAS_PAGO = {
     "descricao": "Descrição",
@@ -526,6 +562,24 @@ def secoes_liquidacao():
     if e.get("liq_pedidos"):
         secao_jornada("Jornada: horas extras e horas noturnas não pagas")
         secao_adicional("Insalubridade ou periculosidade")
+    with st.container(border=True):
+        st.subheader("Outras verbas deferidas")
+        st.caption(
+            "Diferenças salariais, multa convencional, danos morais e outras verbas com valor definido. "
+            "Danos morais são atualizados desde o ajuizamento, sem INSS e IR. Deixe em branco se não houver."
+        )
+        _tabela(
+            "outras",
+            [dict(LINHA_OUTRA_VAZIA)],
+            {
+                COLUNAS_OUTRA["descricao"]: st.column_config.TextColumn(),
+                COLUNAS_OUTRA["competencia"]: st.column_config.DateColumn(format="MM/YYYY"),
+                COLUNAS_OUTRA["valor"]: st.column_config.NumberColumn(min_value=0.0, format="R$ %.2f"),
+                COLUNAS_OUTRA["natureza"]: st.column_config.SelectboxColumn(options=list(NATUREZAS)),
+                COLUNAS_OUTRA["fgts"]: st.column_config.CheckboxColumn(),
+                COLUNAS_OUTRA["dano_moral"]: st.column_config.CheckboxColumn(),
+            },
+        )
 
     with st.container(border=True):
         st.subheader("4. Valores já pagos (dedução)")
@@ -548,6 +602,22 @@ def secoes_liquidacao():
         )
 
     secao_ajuizamento_e_atualizacao(5, com_prescricao=bool(e.get("liq_pedidos")), liquidacao=True)
+    with st.container(border=True):
+        st.subheader("Pagamentos e depósitos no processo")
+        st.caption(
+            "Valores já pagos no processo (incontroverso, parcelas) são atualizados até a liquidação e abatidos do "
+            "total. Para depósito judicial ou recursal, informe o saldo atual (o banco já o atualizou)."
+        )
+        _tabela(
+            "pagamentos",
+            [dict(LINHA_PAGAMENTO_VAZIA)],
+            {
+                COLUNAS_PAGAMENTO["descricao"]: st.column_config.TextColumn(),
+                COLUNAS_PAGAMENTO["data"]: st.column_config.DateColumn(format="DD/MM/YYYY"),
+                COLUNAS_PAGAMENTO["valor"]: st.column_config.NumberColumn(min_value=0.0, format="R$ %.2f"),
+                COLUNAS_PAGAMENTO["deposito"]: st.column_config.CheckboxColumn(),
+            },
+        )
 
     with st.container(border=True):
         st.subheader("6. INSS, imposto de renda, honorários e custas")
@@ -584,12 +654,41 @@ def secoes_liquidacao():
                 key="justica_gratuita",
                 help="A exigibilidade fica suspensa (art. 791-A, § 4º, CLT; ADI 5766 do STF).",
             )
+        if c1.checkbox(
+            "Prazo da citação para pagamento já venceu",
+            key="informar_prazo_citacao",
+            help="A multa de mora sobre o INSS (0,33% ao dia, até 20%) corre do dia seguinte (Súmula 368, V, do TST).",
+        ):
+            c1.date_input("Último dia do prazo", format="DD/MM/YYYY", key="fim_prazo_citacao", min_value=DATA_MINIMA)
+        c2.number_input(
+            "Pensão alimentícia (% do crédito)",
+            min_value=0.0,
+            max_value=100.0,
+            step=5.0,
+            key="pensao_percentual",
+            help="Sobre as verbas atualizadas menos o INSS do reclamante. Também é deduzida da base do IR.",
+        )
+        c2.number_input(
+            "Honorários contratuais (%), só para o IR",
+            min_value=0.0,
+            max_value=100.0,
+            step=5.0,
+            key="honorarios_contratuais_percentual",
+            help="Honorários pagos pelo reclamante ao seu advogado reduzem a base do IR (art. 12-A, § 2º, Lei nº "
+            "7.713/1988). Não são descontados no cálculo.",
+        )
         if c3.checkbox(
             "Custas fixadas na sentença",
             key="custas_fixadas",
             help="Sem marcar, o sistema calcula 2% sobre a condenação (art. 789, CLT).",
         ):
             c3.number_input("Valor das custas (R$)", min_value=0.0, step=10.0, key="custas_valor")
+        c3.number_input("Honorários periciais (R$)", min_value=0.0, step=100.0, key="honorarios_periciais")
+        c3.checkbox(
+            "Perícia a cargo do reclamante",
+            key="periciais_pelo_reclamante",
+            help="Com justiça gratuita, a União paga (art. 790-B, § 4º, CLT; ADI 5766 do STF).",
+        )
 
 
 def pendencias_liquidacao() -> list[str]:
@@ -599,7 +698,7 @@ def pendencias_liquidacao() -> list[str]:
         faltando.append("data do ajuizamento")
     if not e.get("data_atualizacao"):
         faltando.append("data da liquidação")
-    if not e.get("liq_rescisorias") and not e.get("liq_pedidos"):
+    if not e.get("liq_rescisorias") and not e.get("liq_pedidos") and not outras_verbas():
         faltando.append("verbas deferidas")
     return faltando
 
@@ -627,6 +726,43 @@ def valores_pagos() -> list[ValorPago]:
     return pagos
 
 
+def outras_verbas() -> list[OutraVerba]:
+    verbas = []
+    for linha in st.session_state.get("outras_atual", []):
+        valor = dec(linha.get(COLUNAS_OUTRA["valor"]))
+        if not valor:
+            continue
+        verbas.append(
+            OutraVerba(
+                descricao=linha.get(COLUNAS_OUTRA["descricao"]) or "",
+                competencia=linha.get(COLUNAS_OUTRA["competencia"]),
+                valor=valor,
+                natureza=NATUREZAS.get(linha.get(COLUNAS_OUTRA["natureza"]), NaturezaPagamento.INDENIZATORIA),
+                fgts=bool(linha.get(COLUNAS_OUTRA["fgts"])),
+                dano_moral=bool(linha.get(COLUNAS_OUTRA["dano_moral"])),
+            )
+        )
+    return verbas
+
+
+def pagamentos() -> list[Pagamento]:
+    lista = []
+    for linha in st.session_state.get("pagamentos_atual", []):
+        valor = dec(linha.get(COLUNAS_PAGAMENTO["valor"]))
+        data = linha.get(COLUNAS_PAGAMENTO["data"])
+        if not valor or not data:
+            continue
+        lista.append(
+            Pagamento(
+                descricao=linha.get(COLUNAS_PAGAMENTO["descricao"]) or "",
+                data=data,
+                valor=valor,
+                deposito_judicial=bool(linha.get(COLUNAS_PAGAMENTO["deposito"])),
+            )
+        )
+    return lista
+
+
 def dados_liquidacao() -> DadosLiquidacao:
     e = st.session_state
     sucumbencia = bool(e.get("sucumbencia_reclamante"))
@@ -649,4 +785,12 @@ def dados_liquidacao() -> DadosLiquidacao:
         else Decimal(0),
         justica_gratuita=bool(e.get("justica_gratuita")),
         custas_informadas=dec(e.get("custas_valor")) if e.get("custas_fixadas") else None,
+        outras_verbas=outras_verbas(),
+        pagamentos=pagamentos(),
+        fim_prazo_citacao=e.get("fim_prazo_citacao") if e.get("informar_prazo_citacao") else None,
+        honorarios_periciais=dec(e.get("honorarios_periciais")),
+        periciais_pelo_reclamante=bool(e.get("periciais_pelo_reclamante")),
+        pensao_percentual=_percentual(e.get("pensao_percentual")),
+        honorarios_contratuais_percentual=_percentual(e.get("honorarios_contratuais_percentual")),
+        contrato=dados_rescisao(),
     )

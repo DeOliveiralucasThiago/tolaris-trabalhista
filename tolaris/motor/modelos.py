@@ -363,6 +363,29 @@ class ValorPago:
     abater_fgts: bool = False  # o FGTS (e a multa) desse valor também já foi depositado
 
 
+@dataclass(frozen=True)
+class OutraVerba:
+    """Verba deferida fora dos cálculos prontos (diferenças salariais, multa convencional, danos morais etc.)."""
+
+    descricao: str
+    competencia: date | None  # mês a que se refere; danos morais dispensam
+    valor: Decimal
+    natureza: NaturezaPagamento = NaturezaPagamento.INDENIZATORIA
+    fgts: bool = False  # incide FGTS (e a multa, conforme a modalidade)
+    dano_moral: bool = False  # atualizado desde o ajuizamento (SDI-1, E-RR-202-65.2011.5.04.0030)
+
+
+@dataclass(frozen=True)
+class Pagamento:
+    """Pagamento feito no processo (valor incontroverso, parcela de acordo) ou depósito judicial/recursal."""
+
+    descricao: str
+    data: date
+    valor: Decimal
+    # Depósito judicial ou recursal: informe o saldo na data da liquidação (o banco já o atualizou)
+    deposito_judicial: bool = False
+
+
 @dataclass
 class DadosLiquidacao:
     data_ajuizamento: date
@@ -383,3 +406,13 @@ class DadosLiquidacao:
     honorarios_reclamante_percentual: Decimal = ZERO
     justica_gratuita: bool = False  # suspende a exigibilidade dos honorários do reclamante (ADI 5766)
     custas_informadas: Decimal | None = None  # None = 2% sobre a condenação (art. 789, CLT)
+    # Etapa 2
+    outras_verbas: list[OutraVerba] = field(default_factory=list)
+    pagamentos: list[Pagamento] = field(default_factory=list)
+    fim_prazo_citacao: date | None = None  # a partir do dia seguinte, multa de mora sobre o INSS
+    honorarios_periciais: Decimal = ZERO
+    periciais_pelo_reclamante: bool = False
+    pensao_percentual: Decimal = ZERO  # pensão alimentícia sobre o crédito (bruto − INSS do reclamante)
+    honorarios_contratuais_percentual: Decimal = ZERO  # só para a dedução no IR (art. 12-A, § 2º)
+    # Dados do contrato quando a sentença deferiu só outras verbas (datas, salário, modalidade)
+    contrato: DadosRescisao | DadosPedidos | None = None

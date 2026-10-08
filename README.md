@@ -14,8 +14,9 @@ que explica cada valor com a fórmula e o fundamento legal.
   com índices oficiais do Banco Central atualizados todo mês.
 - **Liquidação de sentença**: verbas rescisórias e horas extras/adicionais deferidas, dedução de
   valores pagos, atualização, INSS mês a mês (cota do empregado e da empresa, juros da Súmula
-  368), imposto de renda acumulado (RRA), honorários de sucumbência, custas e o resumo com o
-  líquido do reclamante e o total devido pela reclamada.
+  368), imposto de renda acumulado (RRA), honorários de sucumbência e periciais, custas, outras
+  verbas (inclusive danos morais), pagamentos e depósitos, pensão alimentícia, o resumo com o
+  líquido do reclamante e o total devido pela reclamada, e a comparação com outro cálculo.
 - Exportação em PDF e Excel (com demonstrativo mês a mês) e salvamento do caso em arquivo
   `.json` (nada fica armazenado no servidor).
 

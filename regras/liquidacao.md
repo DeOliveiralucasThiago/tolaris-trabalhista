@@ -143,6 +143,52 @@ teto dos benefícios do RGPS. Quando a sentença fixou as custas, informe o valo
 honorários + custas` (o INSS do reclamante, o IR e os honorários do reclamante já estão dentro das
 verbas, pois são retidos do crédito).
 
+## Etapa 2
+
+### 10. Outras verbas deferidas
+
+Tabela livre para verbas com valor definido na sentença (diferenças salariais, multa convencional,
+indenizações etc.), com competência, natureza (salarial, 13º ou indenizatória) e incidência de FGTS
+(8% + multa, conforme a modalidade).
+
+- **Salarial ou 13º**: entra no INSS (na competência informada) e no IR.
+- **Indenizatória**: sem INSS e IR.
+- **Danos morais**: atualizados desde o ajuizamento, com SELIC até 29/08/2024 e IPCA + taxa legal
+  depois (SDI-1 do TST, E-RR-202-65.2011.5.04.0030; a Súmula 439 foi cancelada pela Res. 225/2025).
+  Sem INSS, IR (Súmula 498 do STJ) e FGTS.
+
+### 11. Pagamentos e depósitos no processo
+
+- **Pagamento** (valor incontroverso, parcela já paga): atualizado pelos mesmos índices, do mês
+  seguinte ao pagamento até a liquidação, e abatido do total devido pela reclamada.
+- **Depósito judicial ou recursal**: informe o **saldo atual** (o banco já atualizou o depósito);
+  o valor é abatido sem nova atualização.
+- O resumo mostra o **saldo a pagar pela reclamada**.
+
+### 12. Multa de mora sobre o INSS
+
+Depois de vencido o prazo da citação para pagamento (Súmula 368, V): 0,33% ao dia, a partir do dia
+seguinte ao fim do prazo, até a data da liquidação, limitada a 20% (art. 61 da Lei nº 9.430/1996).
+Vale para as competências a partir de 03/2009 e fica com a reclamada.
+
+### 13. Honorários periciais
+
+- A cargo da reclamada: somam no total devido.
+- A cargo do reclamante: descontados do crédito, salvo justiça gratuita (a União paga; art. 790-B,
+  § 4º, CLT; ADI 5766 do STF).
+
+### 14. Pensão alimentícia e honorários contratuais
+
+- **Pensão**: percentual sobre as verbas atualizadas menos o INSS do reclamante. É descontada do
+  crédito e deduzida da base do IR na proporção dos rendimentos tributáveis (art. 12-A, § 3º, I).
+- **Honorários contratuais** pagos pelo reclamante: não são descontados no cálculo, mas o
+  percentual informado reduz a base do IR (art. 12-A, § 2º, despesas com a ação).
+
+### 15. Comparação com outro cálculo
+
+Aba onde o advogado digita os valores do cálculo da parte contrária, do perito ou da contadoria,
+linha a linha, e vê a diferença (para a impugnação, art. 879, § 2º, CLT).
+
 ---
 
 ## Pontos para validação pelos advogados
@@ -159,3 +205,9 @@ verbas, pois são retidos do crédito).
 7. **Honorários sobre o FGTS**: incluído na base (o FGTS faz parte da condenação).
 8. **Reflexo em férias** sempre como férias indenizadas (sem INSS e IR). Férias gozadas no
    curso do contrato seriam salariais.
+9. **Pagamentos no processo** atualizados pelos índices trabalhistas e abatidos do total, sem
+    imputação primeiro nos juros (art. 354 do CC).
+10. **Pensão alimentícia** sobre o crédito menos o INSS, antes do IR. Muitas sentenças de família
+    falam em "rendimentos líquidos" (depois do IR).
+11. **Danos morais**: critério da SDI-1 (desde o ajuizamento). Há quem defenda a volta do critério
+    da Súmula 439 depois da Lei nº 14.905/2024.

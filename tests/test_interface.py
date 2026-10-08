@@ -102,4 +102,31 @@ def test_app_calcula_liquidacao():
     metricas = {m.label: m.value for m in app.metric}
     assert set(metricas) == {"Líquido do reclamante", "FGTS a depositar", "INSS e IR", "Total devido pela reclamada"}
     abas = {aba.label for aba in app.tabs}
-    assert {"Resumo da liquidação", "INSS", "Imposto de renda", "Atualização"} <= abas
+    assert {"Resumo da liquidação", "INSS", "Imposto de renda", "Atualização", "Comparar com outro cálculo"} <= abas
+
+
+def test_app_liquida_so_danos_morais():
+    app = AppTest.from_file(APP, default_timeout=30)
+    app.session_state["outras_inicial"] = [
+        {
+            "Descrição": "Danos morais",
+            "Competência (mês)": None,
+            "Valor (R$)": 10000.0,
+            "Natureza": "Indenizatória",
+            "Incide FGTS": False,
+            "Danos morais": True,
+        }
+    ]
+    app.run()
+    app.radio(key="modo").set_value("Liquidação de sentença").run()
+    app.date_input(key="admissao").set_value(date(2022, 1, 1))
+    app.date_input(key="desligamento").set_value(date(2022, 3, 31))
+    app.number_input(key="salario").set_value(2200.0)
+    app.date_input(key="data_ajuizamento").set_value(date(2022, 6, 1))
+    app.date_input(key="data_atualizacao").set_value(date(2023, 3, 10))
+    app.checkbox(key="liq_pedidos").uncheck()
+    app.run()
+    assert not app.exception
+    assert not app.error, [e.value for e in app.error]
+    metricas = {m.label: m.value for m in app.metric}
+    assert metricas["INSS e IR"] == "R$ 0,00"

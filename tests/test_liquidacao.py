@@ -200,3 +200,104 @@ def test_competencias_antes_de_marco_de_2009_sao_atualizadas_pelos_indices_traba
     assert janeiro.segurado == Decimal("39.35")
     assert janeiro.criterio == CRITERIO_TRABALHISTA
     assert linhas[(date(2009, 3, 1), False)].criterio == CRITERIO_SELIC
+
+
+# ---------------------------------------------------------------- etapa 2
+
+
+def test_danos_morais_atualizados_desde_o_ajuizamento_sem_inss_e_ir():
+    from tolaris.motor.modelos import OutraVerba
+
+    r = liquidar(outras_verbas=[OutraVerba("Danos morais", None, Decimal("10000"), dano_moral=True)])
+    linha = next(linha for linha in r.atualizado.linhas if linha.codigo == "outra_1")
+    # Ajuizamento em 06/2022: SELIC de junho/2022 a fevereiro/2023 (9 × 1%), sem fase pré-judicial
+    assert linha.valores.correcao == 0
+    assert linha.valores.selic == Decimal("900.00")
+    assert r.irrf.rendimento == liquidar().irrf.rendimento
+    assert r.inss_segurado == liquidar().inss_segurado
+    assert r.por_pedido()["Danos morais"] == Decimal("10000")
+
+
+def test_outra_verba_salarial_com_fgts_entra_no_inss():
+    from tolaris.motor.modelos import OutraVerba
+
+    verba = OutraVerba("Diferenças salariais", date(2022, 2, 1), Decimal("500"), NaturezaPagamento.SALARIAL, True)
+    r = liquidar(outras_verbas=[verba])
+    valores = {item.codigo: item.valor for item in r.lancamentos}
+    assert valores["outra_1_fgts"] == Decimal("40.00")
+    assert valores["outra_1_multa_fgts"] == Decimal("16.00")
+    assert inss_por_competencia(r)[(date(2022, 2, 1), False)].base_devida == Decimal("850.00")  # 300 + 50 + 500
+
+
+def test_so_outras_verbas_com_os_dados_do_contrato():
+    from tolaris.motor.modelos import OutraVerba
+
+    r = liquidar(
+        pedidos=None,
+        contrato=dados_pedidos(),
+        outras_verbas=[OutraVerba("Multa convencional", date(2022, 3, 1), Decimal("300"))],
+    )
+    assert r.bruto_atualizado > Decimal("300")
+    assert not r.inss
+
+
+def test_multa_de_mora_do_inss_depois_do_prazo_da_citacao():
+    # (37,82 + 103,42) × 0,33% × 10 dias = 4,66; com 100 dias, limitada a 20%: 28,25
+    janeiro = inss_por_competencia(liquidar(fim_prazo_citacao=date(2023, 2, 28)))[(date(2022, 1, 1), False)]
+    assert janeiro.valor_multa == Decimal("4.66")
+    janeiro = inss_por_competencia(liquidar(fim_prazo_citacao=date(2022, 11, 30)))[(date(2022, 1, 1), False)]
+    assert janeiro.valor_multa == Decimal("28.25")
+
+
+def test_pagamentos_e_depositos_abatidos_do_total():
+    from tolaris.motor.modelos import Pagamento
+
+    r = liquidar(
+        pagamentos=[
+            Pagamento("Valor incontroverso", date(2022, 10, 15), Decimal("1000")),
+            Pagamento("Depósito recursal", date(2022, 12, 1), Decimal("5000"), deposito_judicial=True),
+        ]
+    )
+    # Pagamento atualizado pela SELIC de novembro/2022 a fevereiro/2023 (4 × 1%)
+    assert [valor for _, valor in r.pagamentos] == [Decimal("1040.00"), Decimal("5000.00")]
+    assert r.saldo_reclamada == r.total_reclamada - Decimal("6040")
+    assert r.quadro[-1][1] == "Saldo a pagar pela reclamada"
+
+
+def test_honorarios_periciais():
+    sem = liquidar()
+    reclamada = liquidar(honorarios_periciais=Decimal("2000"))
+    assert reclamada.total_reclamada == sem.total_reclamada + 2000
+    reclamante = liquidar(honorarios_periciais=Decimal("2000"), periciais_pelo_reclamante=True)
+    assert reclamante.liquido_reclamante == sem.liquido_reclamante - 2000
+    assert reclamante.total_reclamada == sem.total_reclamada
+    uniao = liquidar(honorarios_periciais=Decimal("2000"), periciais_pelo_reclamante=True, justica_gratuita=True)
+    assert uniao.liquido_reclamante == sem.liquido_reclamante
+    assert uniao.total_reclamada == sem.total_reclamada
+    assert any("União" in alerta for alerta in uniao.alertas)
+
+
+def test_pensao_alimenticia_descontada_e_deduzida_do_ir():
+    sem = liquidar()
+    r = liquidar(pensao_percentual=Decimal("0.30"))
+    assert r.pensao == ((sem.bruto_atualizado - sem.inss_segurado) * Decimal("0.30")).quantize(Decimal("0.01"))
+    assert r.liquido_reclamante == sem.liquido_reclamante - r.pensao
+    assert "pensão alimentícia" in r.irrf.memoria
+
+
+def test_irrf_acumulado_com_pensao_e_honorarios_contratuais():
+    from tolaris.motor.tributos import calcular_irrf_rra
+
+    # Base 20.000 − 1.000 − 3.000 = 16.000 → 16.000 × 27,5% − 896 × 3 = 1.712,00
+    resultado = calcular_irrf_rra(Decimal("20000"), Decimal("1000"), 3, date(2024, 6, 1), Decimal("3000"))
+    assert resultado.valor == Decimal("1712.00")
+
+
+def test_comparacao_com_outro_calculo():
+    from tolaris.motor.liquidacao import comparar
+
+    r = liquidar()
+    linhas = comparar(r.quadro, {"Total devido pela reclamada": r.total_reclamada - Decimal("100")})
+    total = next(linha for linha in linhas if linha[0] == "Total devido pela reclamada")
+    assert total[3] == Decimal("100")
+    assert all(linha[2] is None for linha in linhas if linha[0] != "Total devido pela reclamada")

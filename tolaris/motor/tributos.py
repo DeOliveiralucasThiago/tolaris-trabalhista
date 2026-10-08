@@ -68,6 +68,7 @@ def calcular_irrf(
     dependentes: int,
     data: date,
     permitir_simplificado: bool = True,
+    outras_deducoes=ZERO,
 ) -> ResultadoIRRF:
     """IRRF pela tabela mensal vigente em `data`.
 
@@ -82,7 +83,8 @@ def calcular_irrf(
         return ResultadoIRRF(ZERO, rendimento, ZERO, tabela, "Sem rendimento tributável.")
 
     deducao_dependentes = arredondar(tabela.deducao_dependente * dependentes)
-    deducoes_legais = inss + deducao_dependentes
+    outras_deducoes = arredondar(outras_deducoes)
+    deducoes_legais = inss + deducao_dependentes + outras_deducoes
     partes = [f"Rendimento tributável: {formatar_brl(rendimento)}."]
 
     simplificado = tabela.desconto_simplificado
@@ -97,6 +99,8 @@ def calcular_irrf(
         texto = f"Deduções: INSS {formatar_brl(inss)}"
         if dependentes:
             texto += f" + {dependentes} dependente(s) {formatar_brl(deducao_dependentes)}"
+        if outras_deducoes:
+            texto += f" + pensão alimentícia e honorários contratuais {formatar_brl(outras_deducoes)}"
         partes.append(texto + ".")
 
     base = max(rendimento - deducao, ZERO)
@@ -126,23 +130,29 @@ def calcular_irrf(
     return ResultadoIRRF(imposto, rendimento, base, tabela, " ".join(partes))
 
 
-def calcular_irrf_rra(rendimento, inss, meses: int, data: date) -> ResultadoIRRF:
+def calcular_irrf_rra(rendimento, inss, meses: int, data: date, outras_deducoes=ZERO) -> ResultadoIRRF:
     """IR sobre rendimentos recebidos acumuladamente de anos anteriores (art. 12-A da Lei nº 7.713/1988;
     arts. 36 e 37 da IN RFB nº 1.500/2014): tabela progressiva mensal do mês do recebimento, com os
-    limites das faixas e a parcela a deduzir multiplicados pelo número de meses (NM). Deduções: só a
-    contribuição previdenciária (sem dependentes nem desconto simplificado)."""
+    limites das faixas e a parcela a deduzir multiplicados pelo número de meses (NM). Deduções: a
+    contribuição previdenciária, a pensão alimentícia e as despesas com a ação, inclusive honorários
+    advocatícios pagos pelo contribuinte (sem dependentes nem desconto simplificado)."""
     rendimento = arredondar(rendimento)
     inss = arredondar(inss)
     tabela = irrf_vigente(data)
     if rendimento <= 0:
         return ResultadoIRRF(ZERO, rendimento, ZERO, tabela, "Sem rendimento tributável de anos anteriores.")
 
-    base = max(rendimento - inss, ZERO)
+    outras_deducoes = arredondar(outras_deducoes)
+    base = max(rendimento - inss - outras_deducoes, ZERO)
     partes = [
         f"Rendimentos tributáveis de anos anteriores (principal + correção, sem juros): {formatar_brl(rendimento)};",
         f"número de meses (NM): {meses}; dedução do INSS do reclamante: {formatar_brl(inss)};",
-        f"base {formatar_brl(base)}.",
     ]
+    if outras_deducoes:
+        partes.append(
+            f"pensão alimentícia e honorários contratuais (art. 12-A, §§ 2º e 3º): {formatar_brl(outras_deducoes)};"
+        )
+    partes.append(f"base {formatar_brl(base)}.")
     faixa = next(f for f in tabela.faixas if f.ate is None or base <= f.ate * meses)
     imposto = max(arredondar(base * faixa.aliquota - faixa.parcela * meses), ZERO)
     if faixa.aliquota == 0:

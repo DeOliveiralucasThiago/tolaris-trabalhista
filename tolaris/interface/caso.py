@@ -80,8 +80,14 @@ CAMPOS = (
     "justica_gratuita",
     "custas_fixadas",
     "custas_valor",
+    "informar_prazo_citacao",
+    "fim_prazo_citacao",
+    "honorarios_periciais",
+    "periciais_pelo_reclamante",
+    "pensao_percentual",
+    "honorarios_contratuais_percentual",
 )
-TABELAS = ("historico", "periodos", "pagos")
+TABELAS = ("historico", "periodos", "pagos", "outras", "pagamentos")
 
 
 def _codificar(valor):

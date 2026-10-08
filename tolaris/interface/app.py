@@ -3,6 +3,10 @@
 Nenhuma regra de cálculo fica aqui; tudo vem de `tolaris.motor`.
 """
 
+import zlib
+from decimal import Decimal
+
+import pandas as pd
 import streamlit as st
 
 from tolaris.datas import formatar_data
@@ -11,7 +15,7 @@ from tolaris.interface import formularios as f
 from tolaris.interface.caso import CAMPOS, TABELAS, formulario_de_json, formulario_para_json
 from tolaris.motor.atualizacao import ResultadoAtualizacao, atualizar
 from tolaris.motor.horas_extras import calcular_pedidos
-from tolaris.motor.liquidacao import ResultadoLiquidacao, calcular_liquidacao
+from tolaris.motor.liquidacao import ResultadoLiquidacao, calcular_liquidacao, comparar
 from tolaris.motor.modelos import ErroDeEntrada, Grupo, ResultadoCalculo, ResultadoPedidos
 from tolaris.motor.rescisao import calcular_rescisao
 from tolaris.relatorios.excel import gerar_excel
@@ -137,7 +141,8 @@ def _tabela_inss(resultado: ResultadoLiquidacao):
             "Salário já pago": formatar_brl(linha.base_paga),
             "Cota do reclamante": formatar_brl(linha.segurado),
             "Cota da reclamada": formatar_brl(linha.empresa),
-            "Acréscimos": formatar_brl(linha.acrescimos),
+            "Juros (ou atualização)": formatar_brl(linha.valor_juros),
+            "Multa": formatar_brl(linha.valor_multa),
             "Critério": linha.criterio,
         }
         for linha in resultado.inss
@@ -149,11 +154,56 @@ def _tabela_inss(resultado: ResultadoLiquidacao):
             "Salário já pago": "",
             "Cota do reclamante": formatar_brl(resultado.inss_segurado),
             "Cota da reclamada": formatar_brl(resultado.inss_empresa),
-            "Acréscimos": formatar_brl(resultado.inss_acrescimos),
+            "Juros (ou atualização)": formatar_brl(sum((linha.valor_juros for linha in resultado.inss), 0)),
+            "Multa": formatar_brl(sum((linha.valor_multa for linha in resultado.inss), 0)),
             "Critério": "",
         }
     )
     st.dataframe(linhas, hide_index=True, width="stretch")
+
+
+def _comparacao(resultado: ResultadoLiquidacao):
+    st.caption(
+        "Digite os valores do outro cálculo (da parte contrária, do perito ou da contadoria) para ver as "
+        "diferenças linha a linha. Útil para a impugnação (art. 879, § 2º, CLT)."
+    )
+    rotulos = [linha[1] for linha in resultado.quadro]
+    salvos = st.session_state.setdefault("comparacao_valores", {})
+    tabela = pd.DataFrame(
+        {
+            "Rubrica": rotulos,
+            "Outro cálculo (R$)": pd.Series([salvos.get(rotulo) for rotulo in rotulos], dtype="float64"),
+        }
+    )
+    editado = st.data_editor(
+        tabela,
+        key=f"comparacao_{zlib.crc32('|'.join(rotulos).encode())}",
+        disabled=["Rubrica"],
+        hide_index=True,
+        width="stretch",
+        column_config={"Outro cálculo (R$)": st.column_config.NumberColumn(format="R$ %.2f")},
+    )
+    outro = {}
+    for rotulo, valor in zip(editado["Rubrica"], editado["Outro cálculo (R$)"], strict=True):
+        salvos[rotulo] = None if pd.isna(valor) else float(valor)
+        if salvos[rotulo] is not None:
+            outro[rotulo] = Decimal(str(salvos[rotulo]))
+    if not outro:
+        return
+    st.dataframe(
+        [
+            {
+                "Rubrica": rotulo,
+                "Este cálculo": formatar_brl(nosso),
+                "Outro cálculo": formatar_brl(dele),
+                "Diferença": formatar_brl(diferenca),
+            }
+            for rotulo, nosso, dele, diferenca in comparar(resultado.quadro, outro)
+            if dele is not None
+        ],
+        hide_index=True,
+        width="stretch",
+    )
 
 
 def _resultado(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | None, nome_arquivo: str):
@@ -177,7 +227,7 @@ def _resultado(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | N
     if atualizado:
         abas.append("Atualização")
     if liquidacao:
-        abas += ["INSS", "Imposto de renda"]
+        abas += ["INSS", "Imposto de renda", "Comparar com outro cálculo"]
     abas += ["Memória de cálculo", "Dados apurados"]
     guias = dict(zip(abas, st.tabs(abas), strict=True))
 
@@ -190,6 +240,8 @@ def _resultado(resultado: ResultadoCalculo, atualizado: ResultadoAtualizacao | N
             st.caption("Rendimentos recebidos acumuladamente (art. 12-A da Lei nº 7.713/1988; Súmula 368, VI, do TST).")
             st.markdown(_md(resultado.irrf.memoria))
             st.markdown(_md(f"**IR retido: {formatar_brl(resultado.irrf.valor)}**"))
+        with guias["Comparar com outro cálculo"]:
+            _comparacao(resultado)
 
     if "Valor por pedido" in guias:
         with guias["Valor por pedido"]:
