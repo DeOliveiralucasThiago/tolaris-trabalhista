@@ -46,6 +46,8 @@ CAMPOS = (
     "adicional_ja_pago",
     "considerar_prescricao",
     "data_ajuizamento",
+    "prescricao_interrompida",
+    "data_interrupcao",
     # atualização
     "atualizar",
     "data_atualizacao",

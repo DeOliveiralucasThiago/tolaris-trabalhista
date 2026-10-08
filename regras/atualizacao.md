@@ -61,8 +61,10 @@ de contribuição previdenciária nem de IR sobre os valores atualizados nesta v
 
 `tolaris/tabelas/indices.json`, baixado do Banco Central (SGS) por `scripts/atualizar_indices.py`:
 IPCA-E (10764), IPCA (433), SELIC mensal (4390), taxa legal (29543) e TR (226, período iniciado
-no dia 1º de cada mês). A rotina **Atualizar índices** do GitHub roda todo dia 12 e grava o
-arquivo novo depois de rodar os testes.
+no dia 1º de cada mês). Os índices começam em 2000 (a taxa legal, em 08/2024). A mesma rotina
+baixa a série do salário mínimo (1619), usada para conferir `salario_minimo.json` mês a mês nos
+testes. A rotina **Atualizar índices** do GitHub roda todo dia 12 e grava o arquivo novo depois
+de rodar os testes.
 
 ---
 

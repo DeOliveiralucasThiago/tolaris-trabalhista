@@ -66,3 +66,35 @@ def test_irrf_sem_simplificado_no_13():
 def test_alerta_quando_ano_nao_tem_tabela_nova():
     assert aviso_tabela_desatualizada(date(2026, 12, 31)) is None
     assert "2027" in aviso_tabela_desatualizada(date(2027, 1, 15))
+
+
+def test_salario_minimo_historico():
+    from tolaris.tabelas import salario_minimo_vigente
+
+    assert salario_minimo_vigente(date(2000, 4, 2)).valor == Decimal("136.00")
+    assert salario_minimo_vigente(date(2000, 4, 3)).valor == Decimal("151.00")
+    assert salario_minimo_vigente(date(2011, 2, 28)).valor == Decimal("540.00")  # MP 516/2010
+    assert salario_minimo_vigente(date(2011, 3, 1)).valor == Decimal("545.00")  # Lei 12.382/2011
+
+
+def test_salario_minimo_confere_mes_a_mes_com_o_banco_central():
+    """Compara cada mês desde 2000 com a série 1619 do SGS, baixada pela rotina de índices."""
+    import json
+    from pathlib import Path
+
+    from tolaris.tabelas import salario_minimo_vigente
+
+    caminho = Path(__file__).parent.parent / "tolaris" / "tabelas" / "indices.json"
+    conferencia = json.loads(caminho.read_text(encoding="utf-8")).get("conferencia") if caminho.exists() else None
+    if not conferencia:
+        pytest.skip("série 1619 do Banco Central ainda não foi baixada")
+    divergencias = []
+    for mes, valor in conferencia["salario_minimo"].items():
+        ano, numero = (int(x) for x in mes.split("-"))
+        if ano < 2000:
+            continue
+        # dia 15: evita a mudança de 03/04/2000 no meio de abril
+        nosso = salario_minimo_vigente(date(ano, numero, 15)).valor
+        if nosso != Decimal(valor):
+            divergencias.append(f"{mes}: tabela {nosso}, Banco Central {valor}")
+    assert not divergencias, divergencias

@@ -61,3 +61,16 @@ def test_trocar_de_modo_preserva_os_campos():
     assert app.number_input(key="adicional_he_1").value == 60.0
     app.radio(key="modo").set_value("Verbas rescisórias").run()
     assert app.number_input(key="ferias_vencidas").value == 1
+
+
+def test_campos_de_data_aceitam_datas_antigas():
+    app = AppTest.from_file(APP, default_timeout=30).run()
+    app.radio(key="modo").set_value("Horas extras e adicionais").run()
+    app.checkbox(key="prescricao_interrompida").check().run()
+    app.selectbox(key="adicional_ocupacional").set_value(list(app.selectbox(key="adicional_ocupacional").options)[1])
+    app.run()
+    app.checkbox(key="adicional_todo_contrato").uncheck().run()
+    chaves = {d.key for d in app.date_input}
+    assert {"admissao", "desligamento", "data_ajuizamento", "data_interrupcao", "adicional_inicio"} <= chaves
+    for campo in app.date_input:
+        assert campo.proto.min <= "1960-01-01", (campo.key, campo.proto.min)

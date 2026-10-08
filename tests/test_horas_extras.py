@@ -155,3 +155,59 @@ def test_periodo_fora_do_contrato_e_recortado():
     r = calcular_pedidos(dados(periodos=periodos))
     assert valores(r)["he_1"] == Decimal("900.00")
     assert any("ultrapassa o contrato" in alerta for alerta in r.alertas)
+
+
+def _contrato_antigo(**kwargs):
+    padrao = dict(
+        admissao=date(2015, 1, 1),
+        desligamento=date(2023, 6, 30),
+        periodos=[PeriodoJornada(date(2015, 1, 1), date(2023, 6, 30), horas_extras_1=Decimal(10))],
+    )
+    padrao.update(kwargs)
+    return dados(**padrao)
+
+
+def test_interrupcao_da_prescricao_conta_os_5_anos_da_acao_anterior():
+    # Ação anterior em 10/03/2024 (dentro do biênio): marco em 10/03/2019, mesmo com esta ação
+    # ajuizada em 2026, mais de 2 anos após o fim do contrato
+    r = calcular_pedidos(
+        _contrato_antigo(data_ajuizamento=date(2026, 10, 8), data_interrupcao_prescricao=date(2024, 3, 10))
+    )
+    assert r.mensal[0].competencia == date(2019, 3, 1)
+    assert r.mensal[0].fracao == Decimal(22) / 30  # 10 a 31/03
+    assert r.resumo["Marco prescricional"] == "10/03/2019"
+    assert any("Súmula 268" in alerta for alerta in r.alertas)
+
+
+def test_sem_interrupcao_a_mesma_acao_esta_prescrita_e_o_erro_sugere_informar():
+    with pytest.raises(ErroDeEntrada) as erro:
+        calcular_pedidos(_contrato_antigo(data_ajuizamento=date(2026, 10, 8)))
+    assert "bienal" in str(erro.value) and "interrupção" in str(erro.value)
+
+
+def test_interrupcao_fora_do_bienio_ou_depois_do_ajuizamento_e_recusada():
+    with pytest.raises(ErroDeEntrada) as erro:
+        calcular_pedidos(
+            _contrato_antigo(data_ajuizamento=date(2026, 10, 8), data_interrupcao_prescricao=date(2025, 8, 1))
+        )
+    assert "mais de 2 anos" in str(erro.value)
+    with pytest.raises(ErroDeEntrada) as erro:
+        calcular_pedidos(
+            _contrato_antigo(data_ajuizamento=date(2024, 1, 10), data_interrupcao_prescricao=date(2024, 3, 10))
+        )
+    assert "anterior ao ajuizamento" in str(erro.value)
+
+
+def test_contrato_desde_2005_com_insalubridade_usa_salario_minimo_da_epoca():
+    r = calcular_pedidos(
+        dados(
+            admissao=date(2005, 3, 1),
+            desligamento=date(2006, 6, 30),
+            periodos=[],
+            adicional_ocupacional=AdicionalOcupacional.INSALUBRIDADE_MAXIMO,
+        )
+    )
+    meses = {linha.competencia: linha.valor_adicional for linha in r.mensal}
+    assert meses[date(2005, 3, 1)] == Decimal("104.00")  # 40% × R$ 260,00
+    assert meses[date(2005, 5, 1)] == Decimal("120.00")  # 40% × R$ 300,00 (desde 01/05/2005)
+    assert meses[date(2006, 4, 1)] == Decimal("140.00")  # 40% × R$ 350,00 (desde 01/04/2006)

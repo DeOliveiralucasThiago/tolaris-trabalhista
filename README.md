@@ -64,7 +64,7 @@ GitHub Actions roda todo dia 12, baixa os índices do Banco Central, roda os tes
 `tolaris/tabelas/indices.json`. Para rodar na hora: aba *Actions* → *Atualizar índices* →
 *Run workflow*. Localmente: `python scripts/atualizar_indices.py`.
 
-**INSS, IRRF e salário mínimo:**
+**INSS, IRRF e salário mínimo** (cobertura: salário mínimo desde 1999; INSS desde 2019; IRRF desde 2015):
 Quando sair tabela nova de INSS, IRRF ou salário mínimo, acrescente um item ao JSON
 correspondente em `tolaris/tabelas/` com a data de `vigencia` e a `fonte`, e um teste em
 `tests/test_tributos.py` com um valor oficial divulgado.

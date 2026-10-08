@@ -21,7 +21,7 @@ from tolaris.motor.modelos import (
     PeriodoJornada,
 )
 
-DATA_MINIMA = date(2019, 1, 1)
+DATA_MINIMA = date(1960, 1, 1)  # o cálculo avisa quando faltar tabela para o período
 DIVISORES = {220: "220 (44 h semanais)", 200: "200 (40 h semanais)", 180: "180 (36 h semanais)", 150: "150 (30 h)"}
 PADROES = {
     "admissao": None,
@@ -77,6 +77,7 @@ def iniciar_estado():
         st.session_state.setdefault(chave, padrao)
     st.session_state.setdefault("data_ajuizamento", date.today())
     st.session_state.setdefault("data_atualizacao", date.today())
+    st.session_state.setdefault("data_interrupcao", None)
     for tabela in ("historico", "periodos"):
         st.session_state.setdefault(f"{tabela}_versao", 0)
         st.session_state.setdefault(f"{tabela}_inicial", [])
@@ -103,7 +104,7 @@ def secao_contrato(modo_rescisao: bool):
     with st.container(border=True):
         st.subheader("1. Contrato")
         c1, c2, c3 = st.columns(3)
-        c1.date_input("Data de admissão", format="DD/MM/YYYY", key="admissao", min_value=date(1980, 1, 1))
+        c1.date_input("Data de admissão", format="DD/MM/YYYY", key="admissao", min_value=DATA_MINIMA)
         c2.date_input(
             "Último dia trabalhado",
             format="DD/MM/YYYY",
@@ -309,8 +310,10 @@ def secoes_pedidos():
             )
             if not c2.checkbox("Durante todo o contrato", key="adicional_todo_contrato"):
                 c3, c4 = st.columns(2)
-                c3.date_input("Adicional devido desde", format="DD/MM/YYYY", key="adicional_inicio")
-                c4.date_input("Adicional devido até", format="DD/MM/YYYY", key="adicional_fim")
+                c3.date_input(
+                    "Adicional devido desde", format="DD/MM/YYYY", key="adicional_inicio", min_value=DATA_MINIMA
+                )
+                c4.date_input("Adicional devido até", format="DD/MM/YYYY", key="adicional_fim", min_value=DATA_MINIMA)
 
     secao_ajuizamento_e_atualizacao(5, com_prescricao=True)
 
@@ -324,21 +327,33 @@ def secao_ajuizamento_e_atualizacao(numero: int, com_prescricao: bool):
             "Data do ajuizamento (ou prevista)",
             format="DD/MM/YYYY",
             key="data_ajuizamento",
+            min_value=DATA_MINIMA,
             help="Para a petição inicial, use a data prevista de distribuição: todo o período será "
             "tratado como fase pré-judicial.",
         )
-        if com_prescricao:
-            c1.checkbox(
-                "Aplicar prescrição quinquenal",
-                key="considerar_prescricao",
-                help="Exclui as parcelas anteriores a 5 anos da data do ajuizamento (art. 7º, XXIX, CF).",
-            )
+        if com_prescricao and c1.checkbox(
+            "Aplicar prescrição quinquenal",
+            key="considerar_prescricao",
+            help="Exclui as parcelas anteriores a 5 anos da data do ajuizamento (art. 7º, XXIX, CF).",
+        ):
+            if c1.checkbox(
+                "Prescrição interrompida (ação anterior ou protesto)",
+                key="prescricao_interrompida",
+                help="A ação anterior arquivada (Súmula 268 do TST) ou o protesto judicial (OJ 392 da SDI-1) "
+                "interrompem a prescrição: os 5 anos passam a ser contados da data do ajuizamento deles.",
+            ):
+                c1.date_input(
+                    "Ajuizamento da ação anterior ou do protesto",
+                    format="DD/MM/YYYY",
+                    key="data_interrupcao",
+                    min_value=DATA_MINIMA,
+                )
         if c2.checkbox(
             "Atualizar valores (correção e juros)",
             key="atualizar",
             help="ADC 58 do STF e Lei nº 14.905/2024, conforme a SDI-1 do TST.",
         ):
-            c2.date_input("Atualizar até", format="DD/MM/YYYY", key="data_atualizacao")
+            c2.date_input("Atualizar até", format="DD/MM/YYYY", key="data_atualizacao", min_value=DATA_MINIMA)
             c3.checkbox(
                 "Juros antes do ajuizamento",
                 key="juros_pre_judiciais",
@@ -388,6 +403,9 @@ def dados_pedidos() -> DadosPedidos:
         salario=dec(e["salario"]),
         historico_salarial=historico_salarial(),
         data_ajuizamento=e.get("data_ajuizamento") if e.get("considerar_prescricao") else None,
+        data_interrupcao_prescricao=(
+            e.get("data_interrupcao") if e.get("considerar_prescricao") and e.get("prescricao_interrompida") else None
+        ),
         divisor=int(e["divisor"]),
         adicional_he_1=dec(e["adicional_he_1"]) / 100,
         adicional_he_2=dec(e["adicional_he_2"]) / 100,

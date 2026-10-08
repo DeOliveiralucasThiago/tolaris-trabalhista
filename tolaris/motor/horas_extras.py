@@ -58,6 +58,12 @@ def calcular_pedidos(dados: DadosPedidos) -> ResultadoPedidos:
     return _Calculo(dados).executar()
 
 
+def data_base_prescricao(d: DadosPedidos) -> date | None:
+    """Data da qual se contam os 5 anos: a interrupção (ação anterior/protesto), se houver,
+    ou o ajuizamento desta ação."""
+    return d.data_interrupcao_prescricao or d.data_ajuizamento
+
+
 def marco_prescricional(data_ajuizamento: date) -> date:
     """Prescrição quinquenal: alcança as parcelas anteriores a 5 anos do ajuizamento
     (art. 7º, XXIX, CF; Súmula 308, I, do TST)."""
@@ -96,22 +102,32 @@ def _validar(d: DadosPedidos) -> None:
             "Informe ao menos um pedido: horas extras, horas noturnas ou adicional de insalubridade/periculosidade."
         )
 
-    if d.data_ajuizamento and d.desligamento >= d.admissao:
-        if d.data_ajuizamento > somar_meses(d.desligamento, 24):
+    interrupcao = d.data_interrupcao_prescricao
+    base = data_base_prescricao(d)
+    if base and d.desligamento >= d.admissao:
+        if interrupcao and interrupcao > somar_meses(d.desligamento, 24):
+            erros.append(
+                "A ação anterior (ou o protesto) foi ajuizada mais de 2 anos após o fim do contrato: "
+                "não houve interrupção, porque a pretensão já estava prescrita (art. 7º, XXIX, CF)."
+            )
+        elif interrupcao and d.data_ajuizamento and interrupcao > d.data_ajuizamento:
+            erros.append("A data da interrupção da prescrição deve ser anterior ao ajuizamento desta ação.")
+        elif not interrupcao and d.data_ajuizamento > somar_meses(d.desligamento, 24):
             erros.append(
                 "A ação foi ajuizada mais de 2 anos após o fim do contrato: a pretensão está prescrita "
-                "(prescrição bienal, art. 7º, XXIX, CF)."
+                "(prescrição bienal, art. 7º, XXIX, CF). Se houve ação anterior ou protesto, informe a "
+                "data da interrupção da prescrição."
             )
-        elif marco_prescricional(d.data_ajuizamento) > d.desligamento:
+        elif marco_prescricional(base) > d.desligamento:
             erros.append("Todas as parcelas do contrato estão alcançadas pela prescrição quinquenal.")
-        elif d.data_ajuizamento < d.admissao:
-            erros.append("A data de ajuizamento não pode ser anterior à admissão.")
+        elif base < d.admissao:
+            erros.append("A data de ajuizamento (ou da interrupção) não pode ser anterior à admissão.")
 
     if d.adicional_ocupacional.insalubridade and d.desligamento >= d.admissao:
         primeira = min(t.vigencia for t in tabelas_salario_minimo())
         inicio = max(d.admissao, d.adicional_inicio or d.admissao)
-        if d.data_ajuizamento:
-            inicio = max(inicio, marco_prescricional(d.data_ajuizamento))
+        if data_base_prescricao(d):
+            inicio = max(inicio, marco_prescricional(data_base_prescricao(d)))
         if inicio < primeira:
             erros.append(
                 f"O sistema tem a tabela do salário mínimo a partir de {formatar_data(primeira)}. "
@@ -169,7 +185,8 @@ class _Calculo:
         self.d = dados
         self.alertas: list[str] = []
         self.lancamentos: list[Lancamento] = []
-        self.marco = marco_prescricional(dados.data_ajuizamento) if dados.data_ajuizamento else None
+        base = data_base_prescricao(dados)
+        self.marco = marco_prescricional(base) if base else None
         self.inicio = max(dados.admissao, self.marco) if self.marco else dados.admissao
         self.dias_aviso = dias_de_aviso(dados.admissao, dados.desligamento)
         self.dias_aviso_indenizados = dias_aviso_indenizados(dados.modalidade, dados.aviso, self.dias_aviso)
@@ -632,16 +649,27 @@ class _Calculo:
 
     def _alertas(self):
         d = self.d
-        if not d.data_ajuizamento:
+        if not self.marco:
             self.alertas.append(
                 "Sem data de ajuizamento, o cálculo considera o contrato inteiro. Para a petição inicial, "
                 "informe a data prevista de distribuição: a prescrição quinquenal exclui as parcelas "
                 "anteriores a 5 anos dessa data."
             )
-        elif self.marco and self.marco > d.admissao:
+        elif self.marco > d.admissao:
+            origem = (
+                f"da interrupção em {formatar_data(d.data_interrupcao_prescricao)} (ação anterior ou protesto)"
+                if d.data_interrupcao_prescricao
+                else f"do ajuizamento em {formatar_data(d.data_ajuizamento)}"
+            )
             self.alertas.append(
                 f"Parcelas anteriores a {formatar_data(self.marco)} estão prescritas e foram excluídas "
-                f"(prescrição quinquenal contada do ajuizamento em {formatar_data(d.data_ajuizamento)})."
+                f"(prescrição quinquenal contada {origem})."
+            )
+        if d.data_interrupcao_prescricao:
+            self.alertas.append(
+                "Prescrição interrompida: a interrupção só vale para pedidos idênticos aos da ação anterior "
+                "(Súmula 268 do TST), e esta ação deve ter sido ajuizada em até 2 anos do arquivamento ou "
+                "do trânsito em julgado da anterior. Confira esses dois pontos."
             )
         for i, periodo in enumerate(d.periodos, start=1):
             if periodo.inicio < d.admissao or periodo.fim > d.desligamento:
@@ -664,6 +692,9 @@ class _Calculo:
         }
         if d.data_ajuizamento:
             resumo["Ajuizamento"] = formatar_data(d.data_ajuizamento)
+        if d.data_interrupcao_prescricao:
+            resumo["Interrupção da prescrição"] = formatar_data(d.data_interrupcao_prescricao)
+        if self.marco:
             resumo["Marco prescricional"] = formatar_data(self.marco)
         resumo["Divisor"] = str(d.divisor)
         resumo["Adicionais de horas extras"] = (

@@ -15,6 +15,12 @@ Toda mudança de regra deve atualizar este documento **e** `tests/test_horas_ext
   é proporcional aos dias a partir do marco.
 - **Prescrição bienal**: se a ação for ajuizada mais de 2 anos após o fim do contrato, o sistema
   recusa o cálculo.
+- **Interrupção da prescrição** (Súmula 268 e OJ 392 da SDI-1 do TST): se houve ação anterior
+  arquivada ou protesto judicial, informe a data do ajuizamento deles. Os 5 anos passam a ser
+  contados dessa data, e o ajuizamento atual pode estar a mais de 2 anos do fim do contrato. O
+  sistema exige que a ação anterior/protesto esteja dentro do biênio e seja anterior a esta ação, e
+  alerta que a interrupção vale só para pedidos idênticos e que esta ação deve ter sido ajuizada em
+  até 2 anos do fim da anterior (esses dois pontos o sistema não tem como conferir).
 - Sem data de ajuizamento, calcula o contrato inteiro e emite um alerta.
 - **Mês parcial** (admissão, desligamento, marco prescricional ou período de jornada que começa ou
   termina no meio do mês): fração = dias ÷ 30; mês completo = 1.
@@ -104,10 +110,12 @@ valor principal + reflexos + FGTS, para a liquidação dos pedidos na petição 
 7. **FGTS sobre o reflexo em férias gozadas**: não calculamos. Precisa?
 8. **Adicional noturno**: só o adicional sobre horas noturnas não pagas; não há "hora extra
    noturna" nem prorrogação da jornada noturna (Súmula 60, II, do TST). É uma lacuna relevante?
-9. **Insalubridade**: base no salário mínimo. Algumas categorias têm base maior em norma coletiva.
+9. **Interrupção da prescrição**: o novo prazo bienal corre do arquivamento ou trânsito em julgado da
+   ação anterior. O sistema não pede essa data e só alerta. Devemos pedir e conferir?
+10. **Insalubridade**: base no salário mínimo. Algumas categorias têm base maior em norma coletiva.
 
 ## Fora do escopo desta versão
 
-Cartão de ponto e cálculo da jornada dia a dia, intervalo intrajornada e interjornada, horas in
+Prescrição contra menor de 18 anos (art. 440 da CLT), cartão de ponto e cálculo da jornada dia a dia, intervalo intrajornada e interjornada, horas in
 itinere, sobreaviso, compensação de horas já pagas, base de cálculo por norma coletiva,
 correção monetária e juros (próxima etapa).

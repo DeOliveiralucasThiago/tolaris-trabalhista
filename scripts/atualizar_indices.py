@@ -13,13 +13,14 @@ from datetime import date
 from pathlib import Path
 
 DESTINO = Path(__file__).resolve().parent.parent / "tolaris" / "tabelas" / "indices.json"
-INICIO = 2015
+INICIO = 2000
 SERIES_MENSAIS = {
     "ipca_e": (10764, "IPCA-E (IBGE), variação mensal %"),
     "ipca": (433, "IPCA (IBGE), variação mensal %"),
     "selic": (4390, "Taxa SELIC acumulada no mês, % a.m."),
     "taxa_legal": (29543, "Taxa legal (art. 406 do Código Civil; Resolução CMN 5.171/2024), % a.m."),
 }
+SALARIO_MINIMO = (1619, "Salário mínimo nacional, R$ (conferência de tolaris/tabelas/salario_minimo.json)")
 TR_DIARIA = (226, "TR do período iniciado no 1º dia de cada mês, % (série diária 226)")
 URL = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados?formato=json&dataInicial={inicio}&dataFinal={fim}"
 
@@ -86,11 +87,14 @@ def main():
     series["tr"] = por_mes(baixar(codigo), so_primeiro_dia=True)  # a TR do mês é conhecida no dia 1º
     descricoes["tr"] = f"SGS {codigo}: {descricao}"
 
+    codigo, descricao_sm = SALARIO_MINIMO
+    salario_minimo = por_mes(baixar(codigo))
     conteudo = {
         "descricao": "Índices mensais em % para a atualização dos créditos trabalhistas. Fonte: Banco Central (SGS).",
         "atualizado_em": date.today().isoformat(),
         "series_descricao": descricoes,
         "series": series,
+        "conferencia": {"salario_minimo": salario_minimo, "descricao": f"SGS {codigo}: {descricao_sm}"},
     }
     DESTINO.write_text(json.dumps(conteudo, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
 

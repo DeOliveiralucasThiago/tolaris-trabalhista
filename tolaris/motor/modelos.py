@@ -218,6 +218,9 @@ class DadosPedidos:
     salario: Decimal  # salário mensal na data do desligamento
     historico_salarial: list[AlteracaoSalarial] = field(default_factory=list)
     data_ajuizamento: date | None = None  # marco da prescrição quinquenal
+    # Ajuizamento da ação anterior ou do protesto que interrompeu a prescrição (Súmula 268 e OJ 392
+    # da SDI-1 do TST). Quando informado, a prescrição quinquenal é contada dessa data.
+    data_interrupcao_prescricao: date | None = None
     divisor: int = 220
     adicional_he_1: Decimal = Decimal("0.50")
     adicional_he_2: Decimal = Decimal("1.00")
